@@ -1,7 +1,10 @@
 #include <iostream>
+#include "Graph.h"
 
 int main() {
-    std::cout << "ocl-astar" << std::endl;
-    
+    Graph g(100, 100);
+
+    g.toPfm("demo.pfm");
+
     return 0;
 }
