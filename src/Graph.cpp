@@ -1,9 +1,22 @@
 #include "Graph.h"
 
+#include <cassert>
 #include <fstream>
 #include <iomanip>
 
-Graph::Graph(int width, int height) : m_width(width), m_height(height) {}
+Graph::Graph(int width, int height) : m_width(width), m_height(height) {
+    // Set default cost for each neighbor to 1.0f
+    m_costs.resize((width - 1) * (height - 1), 1.0f);
+}
+
+float Graph::cost(const Position &source, const Position &destination) const {
+    // This function is only legal for neighbors!
+    assert((destination - source).length() == 1.0f);
+
+    const int x = (source.x + destination.x) >> 1;
+    const int y = (source.y + destination.y) >> 1;
+    return m_costs[y * m_width + x];
+}
 
 void Graph::toPfm(const std::string &filePath) const {
     // http://netpbm.sourceforge.net/doc/pfm.html
