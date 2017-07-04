@@ -26,7 +26,7 @@ void Graph::toPfm(const std::string &filePath) const {
     out << std::fixed << -1.0f << '\n';        // Scale Factor / Endianness
 
     // PFM raster
-    static_assert(sizeof(float) == 4);
+    static_assert(sizeof(float) == 4, "float is not 4 bytes!");
     for (int row = m_height - 1; row >= 0; --row) {
         for (int col = 0; col < m_width; ++col) {
             float rgb[3];
