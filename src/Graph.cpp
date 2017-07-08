@@ -27,7 +27,7 @@ float Graph::pathCost(const Position &source, const Position &destination) const
     return m_costs[source.x != destination.x ? index : index + 1];
 }
 
-void Graph::toPfm(const std::string &filePath) const {
+void Graph::toPfm(const std::string &filePath, const std::vector<Node> &path) const {
     // http://netpbm.sourceforge.net/doc/pfm.html
     std::ofstream out(filePath, std::ios::trunc);
     out << "PF\n";                             // Identifier Line
@@ -46,6 +46,7 @@ void Graph::toPfm(const std::string &filePath) const {
     std::vector<RGB> raster;
     raster.reserve(m_width * m_height);
 
+    // Draw graph
     for (int row = m_height - 1; row >= 0; --row) {
         for (int col = 0; col < m_width; ++col) {
 
@@ -55,10 +56,19 @@ void Graph::toPfm(const std::string &filePath) const {
             costs += row < m_height - 1 ? m_costs[2 * (row * m_width + col) + 1] : 1.0f;
             costs += col > 0 ? m_costs[2 * (row * m_width + (col - 1))] : 1.0f;
 
-            raster.emplace_back(0.0f, 0.0f, 4.0f / costs);
+            const float brightness = 4.0f / costs;
+            raster.emplace_back(0.0f, brightness, brightness);
         }
     }
 
-    assert(raster.size() == m_width * m_height);
+    // Draw path
+    for (const auto &node : path) {
+        auto &pixel = raster[(m_height - node.position().y - 1) * m_width + node.position().x];
+        pixel.r = 1.0f;
+        pixel.g /= 2;
+        pixel.b /= 2;
+    }
+
+    assert((int) raster.size() == m_width * m_height);
     out.write(reinterpret_cast<const char *>(raster.data()), raster.size() * sizeof(RGB));
 }

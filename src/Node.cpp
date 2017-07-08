@@ -1,5 +1,7 @@
 #include "Node.h"
 
+#include "Graph.h"
+
 Node::Node(const Graph &g, Position p) : m_graph(&g), m_position(std::move(p)) {}
 
 std::vector<std::pair<Node, float>> Node::neighbors() const {

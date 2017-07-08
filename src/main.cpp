@@ -5,9 +5,9 @@
 int main() {
     Graph g(200, 200);
 
-    g.toPfm("graph.pfm");
-
     auto path = cpuAStar(g, {10, 20}, {190, 180});
+
+    g.toPfm("graph.pfm", path);
 
     for (const auto &node : path)
         std::cout << "(" << node.position().x << ", " << node.position().y << ") ";

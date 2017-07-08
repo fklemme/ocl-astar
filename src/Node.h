@@ -1,8 +1,9 @@
 #pragma once
 
-#include "Graph.h"
 #include "Position.h"
 #include <vector>
+
+class Graph;
 
 class Node {
 public:
