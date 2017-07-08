@@ -6,7 +6,7 @@ class Position {
 public:
     Position operator-(const Position &other) const { return {x - other.x, y - other.y}; }
 
-    float length() const { return std::sqrt(x * x + y * y); }
+    float length() const { return (float) std::sqrt(x * x + y * y); }
 
     int x;
     int y;

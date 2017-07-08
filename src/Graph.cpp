@@ -1,5 +1,6 @@
 #include "Graph.h"
 
+#include <algorithm>
 #include <cassert>
 #include <fstream>
 #include <iomanip>
