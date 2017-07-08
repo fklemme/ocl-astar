@@ -1,5 +1,12 @@
+# Generated output
+Debug/
+Release/
 obj/
 ocl-astar
 *.pfm
 
+# Boost
+boost/
+
+# Project files
 .vscode/
