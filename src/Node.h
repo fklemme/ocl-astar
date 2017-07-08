@@ -21,7 +21,7 @@ private:
 inline bool operator==(const Node &a, const Node &b) { return a.position() == b.position(); }
 inline bool operator!=(const Node &a, const Node &b) { return a.position() != b.position(); }
 
-// Needed for set
+// Needed for set/map
 inline bool operator<(const Node &a, const Node &b) {
     const auto &pa = a.position();
     const auto &pb = b.position();

@@ -8,7 +8,7 @@ class Graph {
 public:
     Graph(int width, int height);
 
-    float cost(const Position &source, const Position &destination) const;
+    float pathCost(const Position &source, const Position &destination) const;
 
     void toPfm(const std::string &filePath) const;
 
