@@ -23,6 +23,7 @@ struct Compare {
 };
 } // namespace
 
+// Implementation like in https://de.wikipedia.org/wiki/A*-Algorithmus#Funktionsweise
 std::vector<Node> cpuAStar(const Graph &g, const Position &source, const Position &destination) {
     // Open and closed list
     PriorityQueue<NodeCost, Compare> open;
@@ -77,5 +78,13 @@ std::vector<Node> cpuAStar(const Graph &g, const Position &source, const Positio
     }
 
     // No path found
+    return {};
+}
+
+std::vector<Node> gpuAStar(const Graph &g, const Position &source, const Position &destination) {
+    return {};
+}
+
+std::vector<Node> gpuGAStar(const Graph &g, const Position &source, const Position &destination) {
     return {};
 }

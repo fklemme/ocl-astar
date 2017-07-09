@@ -6,3 +6,7 @@
 #include <vector>
 
 std::vector<Node> cpuAStar(const Graph &g, const Position &source, const Position &destination);
+
+std::vector<Node> gpuAStar(const Graph &g, const Position &source, const Position &destination);
+
+std::vector<Node> gpuGAStar(const Graph &g, const Position &source, const Position &destination);

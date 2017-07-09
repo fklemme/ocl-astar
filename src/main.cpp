@@ -3,9 +3,9 @@
 #include <iostream>
 
 int main() {
-    Graph g(200, 200);
+    const Graph g(800, 600);
 
-    auto path = cpuAStar(g, {10, 20}, {190, 180});
+    const auto path = cpuAStar(g, {10, 10}, {790, 590});
 
     g.toPfm("graph.pfm", path);
 
