@@ -18,8 +18,6 @@ public:
     int height() const { return m_height; }
 
 private:
-    std::vector<float *> pathsAroundNode(const Position &nodePosition);
-
     int                m_width;
     int                m_height;
     std::vector<float> m_costs;

@@ -1,15 +1,14 @@
 #include "Graph.h"
 
 #include <cassert>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <random>
 
 Graph::Graph(int width, int height) : m_width(width), m_height(height) {
-    // Set default cost for each neighbor to 1.0f
-    m_costs.resize(2 * width * height, 1.0f);
-    // Times two: Save "cost to the right, cost to the bottom" per node.
-    // Allocated a little bit too much memory for access simplicity.
+    // Set default cost for each node to 1.0f
+    m_costs.resize(width * height, 1.0f);
 }
 
 void Graph::generateObstacles(int amount) {
@@ -23,15 +22,20 @@ void Graph::generateObstacles(int amount) {
         const Position center = {(int) std::round(distX(generator)),
                                  (int) std::round(distY(generator))};
         const int radius = std::min(m_width, m_height) / 10;
+
         for (int y = -radius; y <= radius; ++y) {
             for (int x = -radius; x <= radius; ++x) {
                 const Position current = {center.x + x, center.y + y};
-                const float    distance = (current - center).length();
 
-                if (distance <= (float) radius) {
-                    for (auto pathPtr : pathsAroundNode(current))
-                        *pathPtr += std::max(10.0f / (distance + 1.0f), 0.0f);
-                }
+                const bool inBounds =
+                    current.x >= 0 && current.x < m_width && current.y >= 0 && current.y < m_height;
+                if (!inBounds)
+                    continue;
+
+                const float distance = (current - center).length();
+                if (distance < (float) radius)
+                    m_costs[current.y * m_width + current.x] +=
+                        std::sqrt(radius * radius - distance * distance) / 10;
             }
         }
     }
@@ -59,14 +63,7 @@ void Graph::toPfm(const std::string &filePath, const std::vector<Node> &path) co
     // Draw graph
     for (int row = m_height - 1; row >= 0; --row) {
         for (int col = 0; col < m_width; ++col) {
-
-            float costs = 0.0f;
-            costs += row > 0 ? m_costs[2 * ((row - 1) * m_width + col) + 1] : 1.0f;
-            costs += col < m_width - 1 ? m_costs[2 * (row * m_width + col)] : 1.0f;
-            costs += row < m_height - 1 ? m_costs[2 * (row * m_width + col) + 1] : 1.0f;
-            costs += col > 0 ? m_costs[2 * (row * m_width + (col - 1))] : 1.0f;
-
-            const float brightness = 4.0f / costs;
+            const float brightness = 1.0f / m_costs[row * m_width + col];
             raster.emplace_back(0.0f, brightness, brightness);
         }
     }
@@ -79,7 +76,6 @@ void Graph::toPfm(const std::string &filePath, const std::vector<Node> &path) co
         pixel.b /= 10;
     }
 
-    assert((int) raster.size() == m_width * m_height);
     out.write(reinterpret_cast<const char *>(raster.data()), raster.size() * sizeof(RGB));
 }
 
@@ -90,31 +86,9 @@ float Graph::pathCost(const Position &source, const Position &destination) const
     assert(destination.y >= 0 && destination.y < m_height);
 
     // This function is only legal for neighbors!
-    assert((destination - source).length() == 1.0f);
+    assert((std::abs(source.x - destination.x) == 1 && source.y == destination.y) ||
+           (std::abs(source.y - destination.y) == 1 && source.x == destination.x));
 
-    const int x = (source.x + destination.x) / 2;
-    const int y = (source.y + destination.y) / 2;
-    const int index = 2 * (y * m_width + x);
-
-    return m_costs[source.x != destination.x ? index : index + 1];
-}
-
-std::vector<float *> Graph::pathsAroundNode(const Position &p) {
-    const bool inBounds = p.x >= 0 && p.x < m_width && p.y >= 0 && p.y < m_height;
-    if (!inBounds)
-        return {};
-
-    std::vector<float *> result;
-    result.reserve(4);
-
-    if (p.y > 0)
-        result.push_back(&m_costs[2 * ((p.y - 1) * m_width + p.x) + 1]);
-    if (p.x < m_width - 1)
-        result.push_back(&m_costs[2 * (p.y * m_width + p.x)]);
-    if (p.y < m_height - 1)
-        result.push_back(&m_costs[2 * (p.y * m_width + p.x) + 1]);
-    if (p.x > 0)
-        result.push_back(&m_costs[2 * (p.y * m_width + (p.x - 1))]);
-
-    return result;
+    return std::max(m_costs[source.y * m_width + source.x],
+                    m_costs[destination.y * m_width + destination.x]);
 }
