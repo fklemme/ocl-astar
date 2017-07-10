@@ -3,6 +3,7 @@
 #include <cassert>
 #include <fstream>
 #include <iomanip>
+#include <random>
 
 Graph::Graph(int width, int height) : m_width(width), m_height(height) {
     // Set default cost for each neighbor to 1.0f
@@ -11,20 +12,29 @@ Graph::Graph(int width, int height) : m_width(width), m_height(height) {
     // Allocated a little bit too much memory for access simplicity.
 }
 
-float Graph::pathCost(const Position &source, const Position &destination) const {
-    assert(source.x >= 0 && source.x < m_width);
-    assert(source.y >= 0 && source.y < m_height);
-    assert(destination.x >= 0 && destination.x < m_width);
-    assert(destination.y >= 0 && destination.y < m_height);
+void Graph::generateObstacles(int amount) {
+    std::random_device         rd;
+    std::default_random_engine generator(rd());
 
-    // This function is only legal for neighbors!
-    assert((destination - source).length() == 1.0f);
+    std::normal_distribution<float> distX(m_width / 2, m_width / 4);
+    std::normal_distribution<float> distY(m_height / 2, m_height / 4);
 
-    const int x = (source.x + destination.x) / 2;
-    const int y = (source.y + destination.y) / 2;
-    const int index = 2 * (y * m_width + x);
+    for (int i = 0; i < amount; ++i) {
+        const Position center = {(int) std::round(distX(generator)),
+                                 (int) std::round(distY(generator))};
+        const int radius = std::min(m_width, m_height) / 10;
+        for (int y = -radius; y <= radius; ++y) {
+            for (int x = -radius; x <= radius; ++x) {
+                const Position current = {center.x + x, center.y + y};
+                const float    distance = (current - center).length();
 
-    return m_costs[source.x != destination.x ? index : index + 1];
+                if (distance <= (float) radius) {
+                    for (auto pathPtr : pathsAroundNode(current))
+                        *pathPtr += std::max(10.0f / (distance + 1.0f), 0.0f);
+                }
+            }
+        }
+    }
 }
 
 void Graph::toPfm(const std::string &filePath, const std::vector<Node> &path) const {
@@ -65,10 +75,46 @@ void Graph::toPfm(const std::string &filePath, const std::vector<Node> &path) co
     for (const auto &node : path) {
         auto &pixel = raster[(m_height - node.position().y - 1) * m_width + node.position().x];
         pixel.r = 1.0f;
-        pixel.g /= 2;
-        pixel.b /= 2;
+        pixel.g /= 10;
+        pixel.b /= 10;
     }
 
     assert((int) raster.size() == m_width * m_height);
     out.write(reinterpret_cast<const char *>(raster.data()), raster.size() * sizeof(RGB));
+}
+
+float Graph::pathCost(const Position &source, const Position &destination) const {
+    assert(source.x >= 0 && source.x < m_width);
+    assert(source.y >= 0 && source.y < m_height);
+    assert(destination.x >= 0 && destination.x < m_width);
+    assert(destination.y >= 0 && destination.y < m_height);
+
+    // This function is only legal for neighbors!
+    assert((destination - source).length() == 1.0f);
+
+    const int x = (source.x + destination.x) / 2;
+    const int y = (source.y + destination.y) / 2;
+    const int index = 2 * (y * m_width + x);
+
+    return m_costs[source.x != destination.x ? index : index + 1];
+}
+
+std::vector<float *> Graph::pathsAroundNode(const Position &p) {
+    const bool inBounds = p.x >= 0 && p.x < m_width && p.y >= 0 && p.y < m_height;
+    if (!inBounds)
+        return {};
+
+    std::vector<float *> result;
+    result.reserve(4);
+
+    if (p.y > 0)
+        result.push_back(&m_costs[2 * ((p.y - 1) * m_width + p.x) + 1]);
+    if (p.x < m_width - 1)
+        result.push_back(&m_costs[2 * (p.y * m_width + p.x)]);
+    if (p.y < m_height - 1)
+        result.push_back(&m_costs[2 * (p.y * m_width + p.x) + 1]);
+    if (p.x > 0)
+        result.push_back(&m_costs[2 * (p.y * m_width + (p.x - 1))]);
+
+    return result;
 }

@@ -3,15 +3,17 @@
 #include <iostream>
 
 int main() {
-    const Graph g(800, 600);
+    // Generate graph and obstacles
+    Graph g(800, 600);
+    g.generateObstacles();
 
-    const auto path = cpuAStar(g, {10, 10}, {790, 590});
+    // Find path through graph
+    const Position start = {10, 10};
+    const Position destination = {790, 590};
+    const auto     path = cpuAStar(g, start, destination);
 
+    // Print graph to image
     g.toPfm("graph.pfm", path);
-
-    for (const auto &node : path)
-        std::cout << "(" << node.position().x << ", " << node.position().y << ") ";
-    std::cout << std::endl;
 
 #ifdef _WIN32
     std::cout << "\nPress ENTER to continue..." << std::endl;

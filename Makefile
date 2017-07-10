@@ -1,4 +1,5 @@
 CXXFLAGS += -std=c++14 \
+            -O3 \
             -Wall -Wextra
 LDFLAGS  += -OpenCL
 

@@ -62,7 +62,7 @@ std::vector<Node> cpuAStar(const Graph &g, const Position &source, const Positio
                 continue;
 
             const auto nbTotalCost = current.totalCost + nbStepCost;
-            int        nbIndex = open.find([&](const NodeCost &nc) { return nc.node == nbNode; });
+            int nbIndex = open.find([&](const NodeCost &nc) { return nc.node == nbNode; });
 
             // Node already queued for visiting and other path cost is equal or better
             if (nbIndex < (int) open.size() && open[nbIndex].totalCost <= nbTotalCost)
