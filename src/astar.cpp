@@ -1,7 +1,7 @@
 #include "astar.h"
 
 #include "PriorityQueue.h"
-#include <map>
+#include <unordered_map>
 
 namespace {
 struct NodeCost {
@@ -27,7 +27,7 @@ struct Compare {
 std::vector<Node> cpuAStar(const Graph &g, const Position &source, const Position &destination) {
     // Open and closed list
     PriorityQueue<NodeCost, Compare> open;
-    std::map<Node, Node>             closed; // store predecessor to recreate path
+    std::unordered_map<Node, Node>   closed; // store predecessor to recreate path
 
     // Begin at source
     const Node sourceNode(g, source);
@@ -62,7 +62,7 @@ std::vector<Node> cpuAStar(const Graph &g, const Position &source, const Positio
                 continue;
 
             const auto nbTotalCost = current.totalCost + nbStepCost;
-            int nbIndex = open.find([&](const NodeCost &nc) { return nc.node == nbNode; });
+            const int nbIndex = open.find_if([&](const NodeCost &nc) { return nc.node == nbNode; });
 
             // Node already queued for visiting and other path cost is equal or better
             if (nbIndex < (int) open.size() && open[nbIndex].totalCost <= nbTotalCost)

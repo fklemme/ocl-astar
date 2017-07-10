@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Position.h"
+#include <functional>
 #include <vector>
 
 class Graph;
@@ -18,13 +19,29 @@ private:
     Position     m_position;
 };
 
-// Ignore graph here...
+// FIXME: Graph should not be ignored? For now, comparing nodes from different graphs is undefined
+// behavior.
 inline bool operator==(const Node &a, const Node &b) { return a.position() == b.position(); }
 inline bool operator!=(const Node &a, const Node &b) { return a.position() != b.position(); }
 
-// Needed for set/map
+// Needed for (tree) set/map
 inline bool operator<(const Node &a, const Node &b) {
     const auto &pa = a.position();
     const auto &pb = b.position();
     return pa.y < pb.y || (pa.y == pb.y && pa.x < pb.x);
+}
+
+// Needed for unordered (hash) set/map
+namespace std {
+template <>
+struct hash<Node> {
+    using argument_type = Node;
+    using result_type = size_t;
+
+    result_type operator()(argument_type const &s) const {
+        static_assert(sizeof(decltype(s.position().x)) >= 4, "Type too small for hash strategy.");
+
+        return s.position().x ^ (s.position().y << 16);
+    }
+};
 }
