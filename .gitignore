@@ -10,3 +10,4 @@ boost/
 
 # Project files
 .vscode/
+*.vcxproj.user

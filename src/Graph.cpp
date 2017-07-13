@@ -1,5 +1,6 @@
 #include "Graph.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <fstream>
@@ -15,13 +16,13 @@ void Graph::generateObstacles(int amount) {
     std::random_device         rd;
     std::default_random_engine generator(rd());
 
-    std::normal_distribution<float> distX(m_width / 2, m_width / 4);
-    std::normal_distribution<float> distY(m_height / 2, m_height / 4);
+    std::normal_distribution<float> distX(m_width / 2.0f, m_width / 4.0f);
+    std::normal_distribution<float> distY(m_height / 2.0f, m_height / 4.0f);
 
     for (int i = 0; i < amount; ++i) {
         const Position center = {(int) std::round(distX(generator)),
                                  (int) std::round(distY(generator))};
-        const int radius = std::min(m_width, m_height) / 10;
+        const int      radius = std::min(m_width, m_height) / 10;
 
         for (int y = -radius; y <= radius; ++y) {
             for (int x = -radius; x <= radius; ++x) {
