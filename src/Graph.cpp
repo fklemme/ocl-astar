@@ -6,7 +6,12 @@
 #include <cmath>
 #include <fstream>
 #include <iomanip>
+
+#pragma warning(push)
+// Disable warning for VS 2017
+#pragma warning(disable : 4244) // conversion from 'double' to 'float', possible loss of data
 #include <random>
+#pragma warning(pop)
 
 Graph::Graph(int width, int height) : m_width(width), m_height(height) {
     // Set default cost for each node to 1.0f
@@ -23,7 +28,7 @@ void Graph::generateObstacles(int amount) {
     for (int i = 0; i < amount; ++i) {
         const Position center = {(int) std::round(distX(generator)),
                                  (int) std::round(distY(generator))};
-        const int radius = std::min(m_width, m_height) / 10;
+        const int      radius = std::min(m_width, m_height) / 10;
 
         for (int y = -radius; y <= radius; ++y) {
             for (int x = -radius; x <= radius; ++x) {
@@ -99,7 +104,7 @@ float Graph::pathCost(const Node &source, const Node &destination) const {
 
     const bool diagonal = src.x != dst.x && src.y != dst.y;
     const auto cost = std::max(m_costs[src.y * m_width + src.x], m_costs[dst.y * m_width + dst.x]);
-    constexpr float sqrt2 = std::sqrt(2);
+    constexpr float sqrt2 = 1.41421356237f;
     return diagonal ? sqrt2 * cost : cost;
 #endif
 }
