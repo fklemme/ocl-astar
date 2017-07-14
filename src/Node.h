@@ -1,18 +1,22 @@
 #pragma once
 
+#include "Graph.h"
 #include "Position.h"
 #include <functional>
 #include <vector>
-
-class Graph;
 
 class Node {
 public:
     Node(const Graph &g, Position p);
 
-    std::vector<std::pair<Node, float>> neighbors() const;
-
     const Position &position() const { return m_position; }
+
+    bool inBounds() const {
+        return (m_position.x >= 0 && m_position.x < m_graph->width()) &&
+               (m_position.y >= 0 && m_position.y < m_graph->height());
+    }
+
+    std::vector<std::pair<Node, float>> neighbors() const;
 
 private:
     const Graph *m_graph;

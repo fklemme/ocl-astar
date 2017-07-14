@@ -1,5 +1,6 @@
 #include "Graph.h"
 
+#include "Node.h"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -22,20 +23,18 @@ void Graph::generateObstacles(int amount) {
     for (int i = 0; i < amount; ++i) {
         const Position center = {(int) std::round(distX(generator)),
                                  (int) std::round(distY(generator))};
-        const int      radius = std::min(m_width, m_height) / 10;
+        const int radius = std::min(m_width, m_height) / 10;
 
         for (int y = -radius; y <= radius; ++y) {
             for (int x = -radius; x <= radius; ++x) {
-                const Position current = {center.x + x, center.y + y};
+                const Node current{*this, {center.x + x, center.y + y}};
 
-                const bool inBounds =
-                    current.x >= 0 && current.x < m_width && current.y >= 0 && current.y < m_height;
-                if (!inBounds)
+                if (!current.inBounds())
                     continue;
 
-                const float distance = (current - center).length();
+                const float distance = (current.position() - center).length();
                 if (distance < (float) radius)
-                    m_costs[current.y * m_width + current.x] +=
+                    m_costs[current.position().y * m_width + current.position().x] +=
                         std::sqrt(radius * radius - distance * distance) / 10;
             }
         }
@@ -80,16 +79,27 @@ void Graph::toPfm(const std::string &filePath, const std::vector<Node> &path) co
     out.write(reinterpret_cast<const char *>(raster.data()), raster.size() * sizeof(RGB));
 }
 
-float Graph::pathCost(const Position &source, const Position &destination) const {
-    assert(source.x >= 0 && source.x < m_width);
-    assert(source.y >= 0 && source.y < m_height);
-    assert(destination.x >= 0 && destination.x < m_width);
-    assert(destination.y >= 0 && destination.y < m_height);
+float Graph::pathCost(const Node &source, const Node &destination) const {
+    assert(source.inBounds());
+    assert(destination.inBounds());
 
-    // This function is only legal for neighbors!
-    assert((std::abs(source.x - destination.x) == 1 && source.y == destination.y) ||
-           (std::abs(source.y - destination.y) == 1 && source.x == destination.x));
+    const auto &src = source.position();
+    const auto &dst = destination.position();
 
-    return std::max(m_costs[source.y * m_width + source.x],
-                    m_costs[destination.y * m_width + destination.x]);
+// This function is only legal for neighbors!
+#ifndef DIAGONAL
+    // Orthogonal only
+    assert((std::abs(src.x - dst.x) == 1 && src.y == dst.y) ||
+           (std::abs(src.y - dst.y) == 1 && src.x == dst.x));
+
+    return std::max(m_costs[src.y * m_width + src.x], m_costs[dst.y * m_width + dst.x]);
+#else
+    // Diagonal connections as well
+    assert(std::abs(src.x - dst.x) <= 1 && std::abs(src.y - dst.y) <= 1);
+
+    const bool diagonal = src.x != dst.x && src.y != dst.y;
+    const auto cost = std::max(m_costs[src.y * m_width + src.x], m_costs[dst.y * m_width + dst.x]);
+    constexpr float sqrt2 = std::sqrt(2);
+    return diagonal ? sqrt2 * cost : cost;
+#endif
 }
