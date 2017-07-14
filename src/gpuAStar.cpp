@@ -1,6 +1,11 @@
 #include "astar.h"
 
+#pragma warning(push)
+// Disable warning for VS 2017
+#pragma warning(disable : 4244) // conversion from 'boost::compute::ulong_' to '::size_t', possible
+                                // loss of data
 #include <boost/compute.hpp>
+#pragma warning(pop)
 
 #include <iostream> // DEBUG
 
