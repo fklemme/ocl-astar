@@ -31,5 +31,5 @@ format:
 # Clang Tidy
 .PHONY: tidy
 tidy:
-	clang-tidy -checks=cppcoreguidelines-*,modernize-*,readability-*,-readability-braces-around-statements \
+	clang-tidy -checks=cppcoreguidelines-*,modernize-*,readability-*,-readability-braces-around-statements,-cppcoreguidelines-pro-bounds-array-to-pointer-decay \
 	    -header-filter=src/ $(SOURCES) -- $(CXXFLAGS)
