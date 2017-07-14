@@ -1,7 +1,7 @@
 #include "astar.h"
 
 #include "PriorityQueue.h"
-#include <unordered_map>
+#include <map>
 
 namespace {
 struct NodeCost {
@@ -27,7 +27,8 @@ struct Compare {
 std::vector<Node> cpuAStar(const Graph &g, const Position &source, const Position &destination) {
     // Open and closed list
     PriorityQueue<NodeCost, Compare> open;
-    std::unordered_map<Node, Node>   closed; // store predecessor to recreate path
+    // (Tree) map seems to perform _much_ better than the unordered hash map!
+    std::map<Node, Node> closed; // store predecessor as value to recreate path
 
     // Begin at source
     const Node sourceNode(g, source);
