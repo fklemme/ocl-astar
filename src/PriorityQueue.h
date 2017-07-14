@@ -9,7 +9,7 @@
 template <typename T, typename Comparator = std::less<T>>
 class PriorityQueue {
 public:
-    PriorityQueue(const Comparator &compare = Comparator()) : m_compare(compare) {}
+    PriorityQueue(Comparator compare = Comparator()) : m_compare(std::move(compare)) {}
 
     const T &top() const { return m_heap.front(); }
     bool     empty() const { return m_heap.empty(); }
