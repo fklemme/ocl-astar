@@ -2,7 +2,7 @@
 
 //#include <boost/compute.hpp>
 
-std::vector<Node> gpuGAStar(const Graph & /*g*/, const Position & /*source*/,
+std::vector<Node> gpuGAStar(const Graph & /*graph*/, const Position & /*source*/,
                             const Position & /*destination*/) {
     return {};
 }

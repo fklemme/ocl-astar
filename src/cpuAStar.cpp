@@ -24,14 +24,15 @@ struct Compare {
 } // namespace
 
 // Implementation like in https://de.wikipedia.org/wiki/A*-Algorithmus#Funktionsweise
-std::vector<Node> cpuAStar(const Graph &g, const Position &source, const Position &destination) {
+std::vector<Node> cpuAStar(const Graph &graph, const Position &source,
+                           const Position &destination) {
     // Open and closed list
     PriorityQueue<NodeCost, Compare> open;
     // (Tree) map seems to perform _much_ better than the unordered hash map!
     std::map<Node, Node> closed; // store predecessor as value to recreate path
 
     // Begin at source
-    const Node sourceNode(g, source);
+    const Node sourceNode(graph, source);
     open.emplace(sourceNode, 0.0f, 0.0f, sourceNode);
 
     while (!open.empty()) {
