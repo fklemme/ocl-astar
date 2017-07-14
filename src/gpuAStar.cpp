@@ -17,7 +17,7 @@ std::vector<Node> gpuAStar(const Graph &                                     gra
 
     // Set up OpenCL environment and build program
     compute::device gpu = compute::system::default_device();
-    std::cout << "Selected device: " << gpu.name() << std::endl; // DEBUG
+    std::cout << "OpenCL device: " << gpu.name() << std::endl; // DEBUG
 
     compute::context       context(gpu);
     compute::command_queue queue(context, gpu);
@@ -67,13 +67,19 @@ std::vector<Node> gpuAStar(const Graph &                                     gra
     compute::vector<compute::float4_> d_paths(maxPathLength, context);
 
     // DEBUG
+    auto pb = [](int bytes) {
+        if (bytes > (1 << 20))
+            return std::to_string(bytes >> 20) + " MBytes";
+        if (bytes > (1 << 10))
+            return std::to_string(bytes >> 10) + " KBytes";
+        return std::to_string(bytes) + " Bytes";
+    };
+
     std::cout << "Memory used:"
-              << "\n - Nodes: " << ((h_nodes.size() * sizeof(compute::float4_)) >> 20) << " MBytes"
-              << "\n - Edges: " << ((h_edges.size() * sizeof(compute::float4_)) >> 20) << " MBytes"
-              << "\n - Adjacency map: " << ((h_adjacencyMap.size() * sizeof(compute::uint2_)) >> 20)
-              << " MBytes"
-              << "\n - Paths: " << ((h_edges.size() * sizeof(compute::float4_)) >> 20) << " MBytes"
-              << std::endl;
+              << "\n - Nodes: " << pb(h_nodes.size() * sizeof(compute::float4_))
+              << "\n - Edges: " << pb(h_edges.size() * sizeof(compute::float4_))
+              << "\n - Adjacency map: " << pb(h_adjacencyMap.size() * sizeof(compute::uint2_))
+              << "\n - Paths: " << pb(d_paths.size() * sizeof(compute::float4_)) << std::endl;
 
     // Create kernel
     compute::kernel kernel(program, "gpuAStar");

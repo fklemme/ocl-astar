@@ -29,7 +29,7 @@ int main() {
     }
 
 #ifdef _WIN32
-    std::cout << "\nPress ENTER to continue..." << std::endl;
+    std::cout << "\nPress ENTER to continue..." << std::flush;
     std::cin.ignore();
 #endif
     return 0;
