@@ -81,13 +81,3 @@ std::vector<Node> cpuAStar(const Graph &g, const Position &source, const Positio
     // No path found
     return {};
 }
-
-std::vector<Node> gpuAStar(const Graph & /*g*/, const Position & /*source*/,
-                           const Position & /*destination*/) {
-    return {};
-}
-
-std::vector<Node> gpuGAStar(const Graph & /*g*/, const Position & /*source*/,
-                            const Position & /*destination*/) {
-    return {};
-}
