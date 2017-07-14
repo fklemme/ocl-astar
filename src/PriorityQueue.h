@@ -6,10 +6,10 @@
 #include <utility>
 #include <vector>
 
-template <typename T, typename Comparator = std::less<T>>
+template <typename T, typename Compare = std::less<T>>
 class PriorityQueue {
 public:
-    PriorityQueue(Comparator compare = Comparator()) : m_compare(std::move(compare)) {}
+    PriorityQueue(Compare compare = Compare()) : m_compare(std::move(compare)) {}
 
     const T &top() const { return m_heap.front(); }
     bool     empty() const { return m_heap.empty(); }
@@ -74,5 +74,5 @@ public:
 
 private:
     std::vector<T> m_heap;
-    Comparator     m_compare;
+    Compare        m_compare;
 };
