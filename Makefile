@@ -12,6 +12,12 @@ OBJECTS := $(addprefix obj/,$(notdir $(SOURCES:.cpp=.o)))
 run: ocl-astar
 	./$<
 
+.PHONY: display
+display:
+	for pfm in $$(find . -type f -name "*.pfm"); do \
+	    display "$$pfm" & \
+	done
+
 ocl-astar: obj $(OBJECTS)
 	$(CXX) -o $@ $(OBJECTS) $(LDFLAGS)
 
