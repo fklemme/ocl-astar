@@ -8,9 +8,9 @@ HEADERS := $(wildcard src/*.h)
 SOURCES := $(wildcard src/*.cpp)
 OBJECTS := $(addprefix obj/,$(notdir $(SOURCES:.cpp=.o)))
 
-.PHONY: all
-all: ocl-astar
-	./ocl-astar
+.PHONY: run
+run: ocl-astar
+	./$<
 
 ocl-astar: obj $(OBJECTS)
 	$(CXX) -o $@ $(OBJECTS) $(LDFLAGS)
