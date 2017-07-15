@@ -1,5 +1,7 @@
 // GPU A* program
 
+void push(__local float2 *heap, size_t *size, float key, float value) {}
+
 __kernel void gpuAStar(__global const float4 *nodes, // id, x, y, unused
                                 const ulong   nodesSize,
                        __global const float4 *edges, // source, destination, cost, unused
@@ -7,34 +9,19 @@ __kernel void gpuAStar(__global const float4 *nodes, // id, x, y, unused
                        __global const uint2  *adjacencyMap, // edges_begin, edges_end
                                 const ulong   adjacencyMapSize,
                                 const ulong   numberOfAgents,
-                       __global const uint4  *srcDstList,
+                       __global const uint2  *srcDstList, // source id, destination id
                        __global       uint2  *paths, // offset = GID * maxPathLength
-                                const ulong   maxPathLength)
+                                const ulong   maxPathLength,
+                       __local        float2 *open)
 {
     const size_t GID = get_global_id(0);
+    size_t openSize = 0;
 
     if (GID >= numberOfAgents)
         return;
 
-    // FIXME: Most stupid pathfinding possible:
+    const uint source      = srcDstList[GID].x;
+    const uint destination = srcDstList[GID].y;
 
-    const uint2 source      = srcDstList[GID].xy;
-    const uint2 destination = srcDstList[GID].zw;
-    uint2 node = source;
-
-    size_t nodeIndex = GID * maxPathLength;
-    paths[nodeIndex++] = source;
-
-    while (node.x != destination.x || node.y != destination.y) {
-        int dx = (int) destination.x - (int) node.x;
-        int dy = (int) destination.y - (int) node.y;
-
-        if (abs(dx) > abs(dy)) {
-            node.x += dx < 0 ? -1 : 1;
-        } else {
-            node.y += dy < 0 ? -1 : 1;
-        }
-
-        paths[nodeIndex++] = node;
-    }
+    push(open, &openSize, source, 0.0f);
 }
