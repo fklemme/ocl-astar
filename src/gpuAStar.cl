@@ -1,15 +1,15 @@
 // GPU A* program
 
 __kernel void gpuAStar(__global const float4 *nodes, // id, x, y, unused
-                                const uint    nodesSize,
+                                const ulong   nodesSize,
                        __global const float4 *edges, // source, destination, cost, unused
-                                const uint    edgesSize,
+                                const ulong   edgesSize,
                        __global const uint2  *adjacencyMap, // edges_begin, edges_end
-                                const uint    adjacencyMapSize,
-                                const uint    numberOfAgents,
+                                const ulong   adjacencyMapSize,
+                                const ulong   numberOfAgents,
                        __global const uint4  *srcDstList,
                        __global       uint2  *paths, // offset = GID * maxPathLength
-                                const uint    maxPathLength)
+                                const ulong   maxPathLength)
 {
     const size_t GID = get_global_id(0);
 

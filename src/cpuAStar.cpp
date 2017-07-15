@@ -64,15 +64,16 @@ std::vector<Node> cpuAStar(const Graph &graph, const Position &source,
                 continue;
 
             const auto nbTotalCost = current.totalCost + nbStepCost;
-            const int nbIndex = open.find_if([&](const NodeCost &nc) { return nc.node == nbNode; });
+            const auto nbIndex =
+                open.find_if([&](const NodeCost &nc) { return nc.node == nbNode; });
 
             // Node already queued for visiting and other path cost is equal or better
-            if (nbIndex < (int) open.size() && open[nbIndex].totalCost <= nbTotalCost)
+            if (nbIndex < open.size() && open[nbIndex].totalCost <= nbTotalCost)
                 continue;
 
             const auto nbHeuristic = (destination - nbNode.position()).length();
 
-            if (nbIndex < (int) open.size())
+            if (nbIndex < open.size())
                 open.update(nbIndex, {nbNode, nbTotalCost, nbHeuristic, current.node});
             else
                 open.emplace(nbNode, nbTotalCost, nbHeuristic, current.node);

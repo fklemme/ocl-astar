@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <iostream> // DEBUG
 #include <iterator>
+#include <limits>
 #include <string>
 
 #pragma warning(push)
@@ -79,7 +80,9 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
             }
 
             const auto end = h_edges.size();
-            h_adjacencyMap.emplace_back(begin, end);
+            assert(begin <= std::numeric_limits<compute::uint_>::max());
+            assert(end <= std::numeric_limits<compute::uint_>::max());
+            h_adjacencyMap.emplace_back((compute::uint_) begin, (compute::uint_) end);
         }
     }
 
@@ -109,15 +112,15 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     // Create kernel
     compute::kernel kernel(program, "gpuAStar");
     kernel.set_arg(0, d_nodes);
-    kernel.set_arg<compute::uint_>(1, d_nodes.size());
+    kernel.set_arg<compute::ulong_>(1, d_nodes.size());
     kernel.set_arg(2, d_edges);
-    kernel.set_arg<compute::uint_>(3, d_edges.size());
+    kernel.set_arg<compute::ulong_>(3, d_edges.size());
     kernel.set_arg(4, d_adjacencyMap);
-    kernel.set_arg<compute::uint_>(5, d_adjacencyMap.size());
-    kernel.set_arg<compute::uint_>(6, numberOfAgents);
+    kernel.set_arg<compute::ulong_>(5, d_adjacencyMap.size());
+    kernel.set_arg<compute::ulong_>(6, numberOfAgents);
     kernel.set_arg(7, d_srcDstList);
     kernel.set_arg(8, d_paths);
-    kernel.set_arg<compute::uint_>(9, maxPathLength);
+    kernel.set_arg<compute::ulong_>(9, maxPathLength);
 
     // Upload data
     compute::copy(h_nodes.begin(), h_nodes.end(), d_nodes.begin(), queue);
@@ -134,11 +137,6 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     // Download paths
     std::vector<compute::uint2_> h_paths(d_paths.size());
     compute::copy(d_paths.begin(), d_paths.end(), h_paths.begin(), queue);
-
-    // DEBUG: Let's see the first few values from h_paths.
-    for (int i = 0; i < std::min<int>(h_paths.size(), 10); ++i) {
-        std::cout << i << ": " << h_paths[i][0] << ", " << h_paths[i][1] << "\n";
-    }
 
     // TODO: Convert paths
     std::vector<std::vector<Node>> paths(numberOfAgents);

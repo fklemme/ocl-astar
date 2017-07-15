@@ -34,14 +34,14 @@ public:
     // --- This member functions don't exist in std::priority_queue. ----------
 
     // Access heap value by index. (read only)
-    const T &operator[](int index) const {
-        assert(index >= 0 && index < (int) m_heap.size());
+    const T &operator[](std::size_t index) const {
+        assert(index >= 0 && index < m_heap.size());
         return m_heap[index];
     }
 
     // Return index of a value for which predicate p returns true.
     template <typename UnaryPredicate>
-    int find_if(UnaryPredicate p) const {
+    std::size_t find_if(UnaryPredicate p) const {
         // This a basicly a breadth-first search, although not quite optimal. We could cancel the
         // search earlier if we'd give up a bit of generality here.
         auto it = std::find_if(m_heap.begin(), m_heap.end(), p);
@@ -49,8 +49,8 @@ public:
         return std::distance(m_heap.begin(), it);
     }
 
-    void update(int index, T newValue) {
-        assert(index >= 0 && index < (int) m_heap.size());
+    void update(std::size_t index, T newValue) {
+        assert(index >= 0 && index < m_heap.size());
 
         // Only moving up the heap is supported!
         // FIXME: assert(???)
@@ -59,7 +59,7 @@ public:
 
         // Move new value up the heap
         while (index > 0) {
-            const int parent = (index - 1) / 2;
+            const auto parent = (index - 1) / 2;
 
             if (m_compare(m_heap[parent], m_heap[index])) {
                 std::swap(m_heap[parent], m_heap[index]);
