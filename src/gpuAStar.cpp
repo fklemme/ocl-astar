@@ -37,7 +37,7 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     compute::device gpu = compute::system::default_device();
 
     // DEBUG
-    std::cout << "OpenCL device: " << gpu.name()
+    std::cout << "OpenCL device: " << gpu.name() << "\n - Compute units: " << gpu.compute_units()
               << "\n - Global memory: " << bytes(gpu.global_memory_size())
               << "\n - Local memory: " << bytes(gpu.local_memory_size())
               << "\n - Max. memory allocation: "
@@ -59,7 +59,7 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     std::vector<compute::float4_> h_nodes;
     std::vector<compute::float4_> h_edges;
     std::vector<compute::uint2_>  h_adjacencyMap;
-    std::vector<compute::uint4_>  h_srcDstList;
+    std::vector<compute::uint2_>  h_srcDstList;
 
     // Convert graph data
     auto index = [width = graph.width()](int x, int y) { return y * width + x; };
@@ -88,9 +88,9 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
 
     // Convert source-destination pairs
     for (const auto &srcDst : srcDstList) {
-        const auto &src = srcDst.first;
-        const auto &dst = srcDst.second;
-        h_srcDstList.emplace_back(src.x, src.y, dst.x, dst.y);
+        const auto srcID = index(srcDst.first.x, srcDst.first.y);
+        const auto dstID = index(srcDst.second.x, srcDst.second.y);
+        h_srcDstList.emplace_back(srcID, dstID);
     }
 
     // Device memory
@@ -98,7 +98,7 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     compute::vector<compute::float4_> d_nodes(h_nodes.size(), context);
     compute::vector<compute::float4_> d_edges(h_edges.size(), context);
     compute::vector<compute::uint2_>  d_adjacencyMap(h_adjacencyMap.size(), context);
-    compute::vector<compute::uint4_>  d_srcDstList(h_srcDstList.size(), context);
+    compute::vector<compute::uint2_>  d_srcDstList(h_srcDstList.size(), context);
     compute::vector<compute::uint2_>  d_paths(numberOfAgents * maxPathLength, context);
 
     // DEBUG
@@ -121,6 +121,7 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     kernel.set_arg(7, d_srcDstList);
     kernel.set_arg(8, d_paths);
     kernel.set_arg<compute::ulong_>(9, maxPathLength);
+    kernel.set_arg(10, compute::local_buffer<compute::float2_>(1000)); // open list, FIXME: size!
 
     // Upload data
     compute::copy(h_nodes.begin(), h_nodes.end(), d_nodes.begin(), queue);
