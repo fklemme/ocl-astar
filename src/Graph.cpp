@@ -28,7 +28,7 @@ void Graph::generateObstacles(int amount) {
     for (int i = 0; i < amount; ++i) {
         const Position center = {(int) std::round(distX(generator)),
                                  (int) std::round(distY(generator))};
-        const int      radius = std::min(m_width, m_height) / 10;
+        const int radius = std::min(m_width, m_height) / 10;
 
         for (int y = -radius; y <= radius; ++y) {
             for (int x = -radius; x <= radius; ++x) {

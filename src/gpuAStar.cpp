@@ -109,11 +109,11 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     // Create kernel
     compute::kernel kernel(program, "gpuAStar");
     kernel.set_arg(0, d_nodes);
-    kernel.set_arg(1, d_nodes.size());
+    kernel.set_arg<compute::uint_>(1, d_nodes.size());
     kernel.set_arg(2, d_edges);
-    kernel.set_arg(3, d_edges.size());
+    kernel.set_arg<compute::uint_>(3, d_edges.size());
     kernel.set_arg(4, d_adjacencyMap);
-    kernel.set_arg(5, d_adjacencyMap.size());
+    kernel.set_arg<compute::uint_>(5, d_adjacencyMap.size());
     kernel.set_arg<compute::uint_>(6, numberOfAgents);
     kernel.set_arg(7, d_srcDstList);
     kernel.set_arg(8, d_paths);
