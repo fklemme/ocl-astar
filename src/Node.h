@@ -7,8 +7,10 @@
 
 class Node {
 public:
-    Node(const Graph &g, Position p);
+    Node(const Graph &graph, Position position);
+    Node(const Graph &graph, int x, int y);
 
+    const Graph &   graph() const { return *m_graph; }
     const Position &position() const { return m_position; }
 
     bool inBounds() const {
@@ -48,4 +50,4 @@ struct hash<Node> {
         return s.position().x ^ (s.position().y << 16);
     }
 };
-}
+} // namespace std

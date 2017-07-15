@@ -3,27 +3,48 @@
 #include <algorithm>
 #include <iostream>
 
+static float costs(const std::vector<Node> &path) {
+    if (path.empty())
+        return 0.0f;
+
+    const auto &graph = path.front().graph();
+    auto        node = path.begin();
+    float       costs = 0.0f;
+
+    for (auto pred = node++; node != path.end(); pred = node++)
+        costs += graph.pathCost(*pred, *node);
+
+    return costs;
+}
+
 int main() {
     // Generate graph and obstacles
-    Graph g(800, 600);
-    g.generateObstacles();
+    Graph graph(800, 600);
+    graph.generateObstacles();
+
+    const Position start{10, 10};
+    const Position destination{790, 590};
+
+    // CPU (reference) run
+    const auto cpuPath = cpuAStar(graph, start, destination);
+    graph.toPfm("cpuAStar.pfm", cpuPath);
 
     try {
-        // Find path through graph
-        const Position start = {10, 10};
-        const Position destination = {790, 590};
-        const auto     cpuPath = cpuAStar(g, start, destination);
-        const auto     gpuPath = gpuAStar(g, {{start, destination}});
+        // GPU run
+        const auto  gpuPaths = gpuAStar(graph, {{start, destination}});
+        const auto &gpuPath = gpuPaths.front(); // path from first agent
 
         if (std::equal(cpuPath.begin(), cpuPath.end(), gpuPath.begin(), gpuPath.end())) {
             std::cout << "GPU A*: Gold test passed!" << std::endl;
         } else {
-            std::cerr << "GPU A*: Gold test failed!" << std::endl;
+            std::cerr << "GPU A*: Gold test failed!"
+                      << "\nPath length CPU: " << cpuPath.size() << ", GPU: " << gpuPath.size()
+                      << "\nPath cost CPU: " << costs(cpuPath) << ", GPU: " << costs(gpuPath)
+                      << std::endl;
         }
 
         // Print graph to image
-        g.toPfm("cpuAStar.pfm", cpuPath);
-        g.toPfm("gpuAStar.pfm", gpuPath);
+        graph.toPfm("gpuAStar.pfm", gpuPath);
     } catch (std::exception &e) {
         std::cerr << "A* execution failed:\n" << e.what() << std::endl;
     }
