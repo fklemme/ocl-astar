@@ -56,19 +56,8 @@ public:
         // FIXME: assert(???)
 
         m_heap[index] = std::move(newValue);
+        std::push_heap(m_heap.begin(), std::next(m_heap.begin(), index + 1), m_compare);
 
-        // Move new value up the heap
-        while (index > 0) {
-            const auto parent = (index - 1) / 2;
-
-            if (m_compare(m_heap[parent], m_heap[index])) {
-                std::swap(m_heap[parent], m_heap[index]);
-                index = parent;
-            } else
-                break;
-        }
-
-        // done!
         assert(std::is_heap(m_heap.begin(), m_heap.end(), m_compare));
     }
 

@@ -22,8 +22,8 @@ int main() {
     Graph graph(100, 100);
     graph.generateObstacles();
 
-    const Position start{10, 10};
-    const Position destination{90, 90};
+    const Position start{10, 20};
+    const Position destination{90, 80};
 
     // CPU (reference) run
     const auto cpuPath = cpuAStar(graph, start, destination);

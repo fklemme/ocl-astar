@@ -49,24 +49,24 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     auto program = compute::program::create_with_source_file("src/gpuAStar.cl", context);
     program.build();
 
-    // Set up data structures on host
-    static_assert(sizeof(compute::float4_) == 16,
-                  "Nodes: represented by four floats (total of 16 bytes)");
-    static_assert(sizeof(compute::int2_) == 8,
-                  "Adjacency directory: represents the node's set of edges and "
-                  "is composed of two non-negative integers (total of 8 bytes)");
+    struct uint_float {
+        uint_float(compute::uint_ _x, float _y) : x(_x), y(_y) {}
+        compute::uint_ x;
+        float          y;
+    };
 
-    std::vector<compute::float4_> h_nodes;
-    std::vector<compute::float4_> h_edges;
-    std::vector<compute::uint2_>  h_adjacencyMap;
-    std::vector<compute::uint2_>  h_srcDstList;
+    // Set up data structures on host
+    std::vector<compute::int2_>  h_nodes;        // x, y
+    std::vector<uint_float>      h_edges;        // destination index, cost
+    std::vector<compute::uint2_> h_adjacencyMap; // edges_begin, edges_end
+    std::vector<compute::uint2_> h_srcDstList;   // source index, destination index
 
     // Convert graph data
     auto index = [width = graph.width()](int x, int y) { return y * width + x; };
 
     for (int y = 0; y < graph.height(); ++y) {
         for (int x = 0; x < graph.width(); ++x) {
-            h_nodes.emplace_back((float) index(x, y), (float) x, (float) y, 0.0f);
+            h_nodes.emplace_back(x, y);
 
             const Node current(graph, {x, y});
             const auto begin = h_edges.size();
@@ -75,8 +75,7 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
                 const auto &nbPosition = neighbor.first.position();
                 const float nbCost = neighbor.second;
 
-                h_edges.emplace_back((float) index(x, y), (float) index(nbPosition.x, nbPosition.y),
-                                     nbCost, 0.0f);
+                h_edges.emplace_back(index(nbPosition.x, nbPosition.y), nbCost);
             }
 
             const auto end = h_edges.size();
@@ -95,11 +94,11 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
 
     // Device memory
     const std::size_t maxPathLength = 2 * (graph.width() + graph.height()); // TODO: correct size
-    compute::vector<compute::float4_> d_nodes(h_nodes.size(), context);
-    compute::vector<compute::float4_> d_edges(h_edges.size(), context);
-    compute::vector<compute::uint2_>  d_adjacencyMap(h_adjacencyMap.size(), context);
-    compute::vector<compute::uint2_>  d_srcDstList(h_srcDstList.size(), context);
-    compute::vector<compute::uint2_>  d_paths(numberOfAgents * maxPathLength, context);
+    compute::vector<compute::int2_>  d_nodes(h_nodes.size(), context);
+    compute::vector<uint_float>      d_edges(h_edges.size(), context);
+    compute::vector<compute::uint2_> d_adjacencyMap(h_adjacencyMap.size(), context);
+    compute::vector<compute::uint2_> d_srcDstList(h_srcDstList.size(), context);
+    compute::vector<compute::int2_>  d_paths(numberOfAgents * maxPathLength, context);
 
     // DEBUG
     std::cout << "Memory needed:"
@@ -121,7 +120,9 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     kernel.set_arg(7, d_srcDstList);
     kernel.set_arg(8, d_paths);
     kernel.set_arg<compute::ulong_>(9, maxPathLength);
-    kernel.set_arg(10, compute::local_buffer<compute::float2_>(1000)); // open list, FIXME: size!
+    kernel.set_arg(
+        10, compute::local_buffer<uint_float>(h_nodes.size() / 2)); // open list, FIXME: size!
+    kernel.set_arg(11, compute::local_buffer<compute::float_>(h_nodes.size()));
 
     // Upload data
     compute::copy(h_nodes.begin(), h_nodes.end(), d_nodes.begin(), queue);
@@ -136,7 +137,7 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     queue.finish();
 
     // Download paths
-    std::vector<compute::uint2_> h_paths(d_paths.size());
+    std::vector<compute::int2_> h_paths(d_paths.size()); // x, y
     compute::copy(d_paths.begin(), d_paths.end(), h_paths.begin(), queue);
 
     // TODO: Convert paths
@@ -144,7 +145,12 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     for (std::size_t i = 0; i < numberOfAgents; ++i) {
         const auto begin = std::next(h_paths.begin(), i * maxPathLength);
         const auto end = std::next(begin, maxPathLength);
+        const auto source = srcDstList[i].first;
         const auto destination = srcDstList[i].second;
+
+        const Position firstPosition{(int) (*begin)[0], (int) (*begin)[1]};
+        if (firstPosition != source)
+            continue; // no path found
 
         for (auto it = begin; it != end; ++it) {
             const Position position{(int) (*it)[0], (int) (*it)[1]};
