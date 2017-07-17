@@ -21,6 +21,10 @@ void push(__local uint_float *heap, size_t *size, uint value, float cost) {
     heap[index] = (uint_float){value, cost};
 }
 
+void update(__local uint_float *heap, size_t index, uint value, float cost) {
+    push(heap, &index, value, cost);
+}
+
 void pop(__local uint_float *heap, size_t *size) {
     uint_float value = heap[--(*size)];
     size_t     index = 0;
@@ -41,6 +45,17 @@ void pop(__local uint_float *heap, size_t *size) {
     heap[index] = value;
 }
 
+uint find(__local uint_float *heap, size_t *size, uint value) {
+    uint index = 0;
+
+    while (index < *size) {
+        if (heap[index].x == value)
+            break;
+    }
+
+    return index;
+}
+
 // Debugging / testing
 bool is_heap(__local uint_float *heap, size_t *size) {
     for (size_t index = 0; index < *size / 2; ++index) {
@@ -54,6 +69,11 @@ bool is_heap(__local uint_float *heap, size_t *size) {
     }
 
     return true;
+}
+
+float heuristic(int2 source, int2 destination) {
+    const int2 diff = destination - source;
+    return sqrt((float) diff.x * diff.x + diff.y * diff.y);
 }
 
 __kernel void gpuAStar(__global const int2       *nodes,            // x, y
@@ -85,9 +105,35 @@ __kernel void gpuAStar(__global const int2       *nodes,            // x, y
     push(open, &openSize, source, 0.0f);
 
     while (openSize > 0) {
-        uint current = open[0].x;
+        const uint current = open[0].x;
         pop(open, &openSize);
 
-        // TODO...
+        if (current == destination)
+            break; // TODO
+
+        const float totalCost = info[current];
+        info[current] = -1.0f; // close
+
+        const uint2 neighbors = adjacencyMap[current];
+        for (uint neighbor = neighbors.x; neighbor != neighbors.y; ++neighbor) {
+            const uint  nbNode     = edges[neighbor].x;
+            const float nbStepCost = edges[neighbor].y;
+
+            if (info[current] < 0.0f) // closed
+                continue;
+
+            const float nbTotalCost = totalCost + nbStepCost;
+            const uint  nbIndex = find(open, &openSize, neighbor);
+
+            if (nbIndex < openSize && info[neighbor] <= nbTotalCost)
+                continue;
+
+            const float nbHeuristic = heuristic(nodes[neighbor], nodes[destination]);
+
+            if (nbIndex < openSize)
+                update(open, nbIndex, nbNode, nbTotalCost + nbHeuristic);
+            else
+                push(open, &openSize, nbNode, nbTotalCost + nbHeuristic);
+        }
     }
 }
