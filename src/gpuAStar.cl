@@ -82,12 +82,12 @@ __kernel void gpuAStar(__global const int2       *nodes,            // x, y
                                 const ulong       edgesSize,
                        __global const uint2      *adjacencyMap,     // edges_begin, edges_end
                                 const ulong       adjacencyMapSize,
-                                const ulong       numberOfAgents,
-                       __global const uint2      *srcDstList,       // source id, destination id
-                       __global       int2       *paths,            // x, y; offset = GID * maxPathLength
+                                const ulong       numberOfAgents,   // offset = GID * maxPathLength; for per-thread arguments below
+         /* input:  */ __global const uint2      *srcDstList,       // source id, destination id
+         /* output: */ __global       int2       *paths,            // x, y
                                 const ulong       maxPathLength,
                        __local        uint_float *open,             // id, cost
-                       __local        float      *info)             // total cost; or -1.0f ^= visited
+                       __global       float      *info)             // total cost; or -1.0f ^= visited
 {
     const size_t GID = get_global_id(0);
     size_t openSize = 0;

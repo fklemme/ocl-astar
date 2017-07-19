@@ -124,6 +124,16 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
         10, compute::local_buffer<uint_float>(h_nodes.size() / 2)); // open list, FIXME: size!
     kernel.set_arg(11, compute::local_buffer<compute::float_>(h_nodes.size()));
 
+    // Debug: Check local memory size.
+    const auto requiredLocalMemory =
+        sizeof(uint_float) * h_nodes.size() / 2 + sizeof(compute::float_) * h_nodes.size();
+    if (requiredLocalMemory > gpu.local_memory_size()) {
+        std::cerr << "Too much local memory required!"
+                  << "\nAvailable local memory: " << gpu.local_memory_size()
+                  << "\nRequired local memory: " << requiredLocalMemory << std::endl;
+        throw std::range_error("Out of memory");
+    }
+
     // Upload data
     compute::copy(h_nodes.begin(), h_nodes.end(), d_nodes.begin(), queue);
     compute::copy(h_edges.begin(), h_edges.end(), d_edges.begin(), queue);

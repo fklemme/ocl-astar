@@ -19,11 +19,11 @@ static float costs(const std::vector<Node> &path) {
 
 int main() {
     // Generate graph and obstacles
-    Graph graph(50, 50);
+    Graph graph(100, 100);
     graph.generateObstacles();
 
     const Position start{10, 20};
-    const Position destination{30, 40};
+    const Position destination{80, 90};
 
     // CPU (reference) run
     const auto cpuPath = cpuAStar(graph, start, destination);
