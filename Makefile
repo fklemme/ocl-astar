@@ -1,8 +1,14 @@
+BOOSTDIR := $(shell test -d boost && echo local)
+
 CXXFLAGS += -std=c++14 \
             -O3 \
             -Wall -Wextra \
 			-Wno-unknown-pragmas
 LDFLAGS  += -lOpenCL
+
+ifeq ($(BOOSTDIR), local)
+    CXXFLAGS += -Iboost
+endif
 
 HEADERS := $(wildcard src/*.h)
 SOURCES := $(wildcard src/*.cpp)
@@ -30,6 +36,10 @@ obj/%.o: src/%.cpp
 .PHONY: clean
 clean:
 	rm -rf obj
+
+boost:
+	curl -L https://dl.bintray.com/boostorg/release/1.64.0/source/boost_1_64_0.tar.bz2 | tar xj
+	mv boost_1_64_0 boost
 
 # Clang Format - Settings in file .clang-format
 .PHONY: format
