@@ -1,7 +1,6 @@
 #include "astar.h"
 
 #include "PriorityQueue.h"
-#include <iostream> // DEBUG
 #include <map>
 
 namespace {
@@ -32,9 +31,6 @@ std::vector<Node> cpuAStar(const Graph &graph, const Position &source,
     // (Tree) map seems to perform _much_ better than the unordered hash map!
     std::map<Node, Node> closed; // store predecessor as value to recreate path
 
-    // DEBUG
-    std::size_t maxHeapSize = 0;
-
     // Begin at source
     const Node sourceNode(graph, source);
     open.emplace(sourceNode, 0.0f, 0.0f, sourceNode);
@@ -53,7 +49,7 @@ std::vector<Node> cpuAStar(const Graph &graph, const Position &source,
             }
 
             std::reverse(result.begin(), result.end());
-            std::cout << "Max heap size: " << maxHeapSize << std::endl; // DEBUG
+
             return result;
         }
 
@@ -83,9 +79,6 @@ std::vector<Node> cpuAStar(const Graph &graph, const Position &source,
             else
                 open.emplace(nbNode, nbTotalCost, nbHeuristic, current.node);
         }
-
-        if (open.size() > maxHeapSize)
-            maxHeapSize = open.size();
     }
 
     // No path found
