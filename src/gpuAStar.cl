@@ -7,6 +7,13 @@ typedef struct {
 } uint_float;
 
 typedef struct {
+    uint  closed;
+    float totalCost;
+    uint  predecessor;
+    uint  _reserved;   // for memory alignment
+} Info;
+
+typedef struct {
     __local  uint_float *localMem;
     const    size_t      localSize;
     __global uint_float *globalExt;
@@ -85,15 +92,13 @@ void pop(OpenList *open) {
 }
 
 uint find(OpenList *open, uint value) {
-    uint index = 0;
-
-    while (index < open->size) {
+    for (uint index = 0; index < open->size; ++index) {
         uint_float iValue = _read_heap(open, index);
         if (iValue.first == value)
-            break;
+            return index;
     }
 
-    return index;
+    return open->size;
 }
 
 // Debugging / testing
@@ -117,15 +122,45 @@ bool is_heap(OpenList *open) {
     return true;
 }
 
-// ----- Kernel ---------------------------------------------------------------
+// ----- Kernel logic ---------------------------------------------------------
 float heuristic(int2 source, int2 destination) {
     const int2 diff = destination - source;
     return sqrt((float) (diff.x * diff.x + diff.y * diff.y));
 }
 
+size_t recreate_path(__global const int2  *nodes,
+                     __global       int2  *path,
+                                    ulong  maxPathLength,
+                     __global       Info  *info,
+                                    uint   destination)
+{
+    // TODO: optimize! Use local memory!
+
+    path[0] = nodes[destination];
+    size_t length = 1;
+
+    uint node        = destination;
+    uint predecessor = info[node].predecessor;
+
+    while (length < maxPathLength && node != predecessor) {
+        node           = predecessor;
+        predecessor    = info[node].predecessor;
+        path[length++] = nodes[node];
+    }
+
+    // reverse path
+    for (int i = 0; i < length / 2; ++i) {
+        int2 tmp = path[i];
+        path[i] = path[length - i - 1];
+        path[length - i - 1] = tmp;
+    }
+
+    return length;
+}
+
 __kernel void gpuAStar(__global const int2       *nodes,            // x, y
                                 const ulong       nodesSize,
-                       __global const uint_float *edges,            // destination index, cost
+                       __global const uint_float *edges,            // destination index, stepCost
                                 const ulong       edgesSize,
                        __global const uint2      *adjacencyMap,     // edges_begin, edges_end
                                 const ulong       adjacencyMapSize,
@@ -133,10 +168,11 @@ __kernel void gpuAStar(__global const int2       *nodes,            // x, y
          /* input:  */ __global const uint2      *srcDstList,       // source id, destination id
          /* output: */ __global       int2       *paths,            // x, y; offset = GID * maxPathLength;
                                 const ulong       maxPathLength,
-                       __local        uint_float *openLocal,        // id, cost
-                                const ulong       openLocalSize,    // per agent local memory
-                       __global       uint_float *openGlobalExt,    // id, cost; fallback if out of local memory
-                       __global       float      *info)             // total cost; or -1.0f ^= visited
+                       __local        uint_float *openLocal,        // open lists: id, cost
+                                const ulong       openLocalSize,    // per agent (local memory) open list size
+                       __global       uint_float *openGlobalExt,    // open lists: id, cost; fallback if out of local memory
+                       __global       Info       *infos,            // closed lists, see members at the top
+                       __global       int        *returnCode)       // return code (for debugging purposes)
 {
     const size_t GID = get_global_id(0);
     const size_t LID = get_local_id(0);
@@ -149,12 +185,17 @@ __kernel void gpuAStar(__global const int2       *nodes,            // x, y
                      openGlobalExt + GID * nodesSize,
                      0};
 
+    __global Info *info = infos + GID * nodesSize;
+
     const uint source      = srcDstList[GID].x;
     const uint destination = srcDstList[GID].y;
 
     // Initialize result in case no path is found.
     // If the first node in path is not source, we can expect a failure.
     paths[GID * maxPathLength] = nodes[destination];
+    returnCode[GID] = 1; // failure: no path found!
+
+    info[source].predecessor = source; // to recreate path
 
     // Begin at source
     push(&open, source, 0.0f);
@@ -163,32 +204,55 @@ __kernel void gpuAStar(__global const int2       *nodes,            // x, y
         const uint current = top(&open);
         pop(&open);
 
-        if (current == destination)
-            break; // TODO
+        // DEBUG: heap after pop
+        if (!is_heap(&open)) {
+            returnCode[GID] = 90;
+            return; // error: broken heap!
+        }
 
-        const float totalCost = info[current];
-        info[current] = -1.0f; // close
+        if (current == destination) {
+            size_t length = recreate_path(nodes, paths + GID * maxPathLength,
+                                          maxPathLength, info, destination);
+            returnCode[GID] = length < maxPathLength ?
+                0 : // success: path found!
+                2;  // failure: path too long!
+            return;
+        }
 
-        const uint2 neighbors = adjacencyMap[current];
-        for (uint neighbor = neighbors.x; neighbor != neighbors.y; ++neighbor) {
-            const uint  nbNode     = edges[neighbor].first;
-            const float nbStepCost = edges[neighbor].second;
+        info[current].closed = 1; // close node
+        const float totalCost = info[current].totalCost;
 
-            if (info[current] < 0.0f) // closed
+        const uint2 edgeRange = adjacencyMap[current];
+        for (uint edge = edgeRange.x; edge != edgeRange.y; ++edge) {
+            const uint  nbNode     = edges[edge].first;
+            const float nbStepCost = edges[edge].second;
+
+            if (info[nbNode].closed == 1)
                 continue;
 
             const float nbTotalCost = totalCost + nbStepCost;
-            const uint  nbIndex = find(&open, neighbor);
+            const uint  nbIndex = find(&open, nbNode);
 
-            if (nbIndex < open.size && info[neighbor] <= nbTotalCost)
+            if (nbIndex < open.size && info[nbNode].totalCost <= nbTotalCost)
                 continue;
 
-            const float nbHeuristic = heuristic(nodes[neighbor], nodes[destination]);
+            info[nbNode].totalCost = nbTotalCost;
+
+            // Store predecessor to recreate path
+            info[nbNode].predecessor = current;
+
+            const float nbHeuristic = heuristic(nodes[nbNode], nodes[destination]);
 
             if (nbIndex < open.size)
                 update(&open, nbIndex, nbNode, nbTotalCost + nbHeuristic);
             else
                 push(&open, nbNode, nbTotalCost + nbHeuristic);
+
+            // DEBUG: heap after push / update
+            if (!is_heap(&open)) {
+                returnCode[GID] = 91;
+                return; // error: broken heap!
+            }
         }
     }
 }

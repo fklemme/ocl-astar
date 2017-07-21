@@ -47,8 +47,7 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     compute::command_queue queue(context, gpu);
 
     auto program = compute::program::create_with_source_file("src/gpuAStar.cl", context);
-    program.build();
-    //std::cout << "Build log:\n" << program.build_log() << std::endl; // DEBUG
+    program.build(/* "-O0" */); // FIXME: -O0 somehow prevents crash on AMD
 
     // Set up data structures on host
     using uint_float = std::pair<compute::uint_, compute::float_>;
@@ -96,20 +95,22 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     compute::vector<compute::uint2_> d_srcDstList(h_srcDstList.size(), context);
     compute::vector<compute::int2_>  d_paths(numberOfAgents * maxPathLength, context);
 
+    // Should ideally be in local memory, but probably not enough space!
+    compute::vector<uint_float> d_openExt(numberOfAgents * h_nodes.size(), context);
+    using Info = compute::uint4_; // wrong type, but should be a sufficient placeholder
+    compute::vector<Info>          d_info(numberOfAgents * h_nodes.size(), context);
+    compute::vector<compute::int_> d_returnCodes(numberOfAgents, context);
+
     // Local memory
-    const auto perAgentLocalMemorySize =
+    const auto perAgentLocalMemoryBytes =
         std::min(h_nodes.size() * sizeof(uint_float),
                  (std::size_t) gpu.local_memory_size()); // TODO: correct size
-    const auto localWorkSize = (std::size_t) gpu.local_memory_size() / perAgentLocalMemorySize;
+    const auto localWorkSize = (std::size_t) gpu.local_memory_size() / perAgentLocalMemoryBytes;
     assert(localWorkSize >= 1);
-    const auto localMemorySize = localWorkSize * perAgentLocalMemorySize;
-    assert(localMemorySize <= gpu.local_memory_size());
-    const auto localMemory =
-        compute::local_buffer<uint_float>(localMemorySize / sizeof(uint_float));
-
-    // Should ideally be in local memory, but probably not enough space!
-    compute::vector<uint_float>      d_openExt(numberOfAgents * h_nodes.size(), context);
-    compute::vector<compute::float_> d_info(numberOfAgents * h_nodes.size(), context);
+    const auto localMemoryBytes = localWorkSize * perAgentLocalMemoryBytes;
+    const auto localMemorySize = localMemoryBytes / sizeof(uint_float);
+    assert(localMemoryBytes <= gpu.local_memory_size());
+    const auto localMemory = compute::local_buffer<uint_float>(localMemorySize);
 
     // DEBUG
     std::cout << "Global memory used:"
@@ -119,9 +120,9 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
               << "\n - SrcDst list: " << bytes(d_srcDstList.size() * sizeof(compute::uint2_))
               << "\n - Paths: " << bytes(d_paths.size() * sizeof(compute::int2_))
               << "\n - Open list (ext): " << bytes(d_openExt.size() * sizeof(uint_float))
-              << "\n - Info table: " << bytes(d_openExt.size() * sizeof(compute::float_))
+              << "\n - Info table: " << bytes(d_openExt.size() * sizeof(Info))
               << "\nLocal memory used:"
-              << "\n - Memory per agent: " << bytes(perAgentLocalMemorySize)
+              << "\n - Memory per agent: " << bytes(perAgentLocalMemoryBytes)
               << "\n - Local work size: " << localWorkSize
               << "\n - Allocated local memory: " << bytes(localMemorySize) << std::endl;
 
@@ -138,9 +139,10 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     kernel.set_arg(8, d_paths);
     kernel.set_arg<compute::ulong_>(9, maxPathLength);
     kernel.set_arg(10, localMemory); // open list
-    kernel.set_arg(11, perAgentLocalMemorySize);
+    kernel.set_arg<compute::ulong_>(11, perAgentLocalMemoryBytes / sizeof(uint_float));
     kernel.set_arg(12, d_openExt);
     kernel.set_arg(13, d_info);
+    kernel.set_arg(14, d_returnCodes);
 
     // Upload data
     compute::copy(h_nodes.begin(), h_nodes.end(), d_nodes.begin(), queue);
@@ -148,15 +150,21 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     compute::copy(h_adjacencyMap.begin(), h_adjacencyMap.end(), d_adjacencyMap.begin(), queue);
     compute::copy(h_srcDstList.begin(), h_srcDstList.end(), d_srcDstList.begin(), queue);
 
+    std::vector<Info> h_info(d_info.size(), {0, 0, 0, 0}); // just to have it well initialized
+    compute::copy(h_info.begin(), h_info.end(), d_info.begin(), queue);
+
     // Run kernel
     const std::size_t globalWorkSize = numberOfAgents;
     queue.enqueue_1d_range_kernel(kernel, 0, globalWorkSize,
-        globalWorkSize > localWorkSize ? localWorkSize : globalWorkSize);
+                                  globalWorkSize > localWorkSize ? localWorkSize : globalWorkSize);
     queue.finish();
 
-    // Download paths
+    // Download data
     std::vector<compute::int2_> h_paths(d_paths.size()); // x, y
+    std::vector<compute::int_>  h_returnCodes(d_returnCodes.size());
+
     compute::copy(d_paths.begin(), d_paths.end(), h_paths.begin(), queue);
+    compute::copy(d_returnCodes.begin(), d_returnCodes.end(), h_returnCodes.begin(), queue);
 
     // TODO: Convert paths
     std::vector<std::vector<Node>> paths(numberOfAgents);
@@ -179,6 +187,12 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
                 break;
         }
     }
+
+    // DEBUG
+    std::cout << "Return codes:";
+    for (auto returnCode : h_returnCodes)
+        std::cout << ' ' << returnCode;
+    std::cout << std::endl;
 
     return paths;
 }
