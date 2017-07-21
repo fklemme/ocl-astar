@@ -48,6 +48,7 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
 
     auto program = compute::program::create_with_source_file("src/gpuAStar.cl", context);
     program.build();
+    //std::cout << "Build log:\n" << program.build_log() << std::endl; // DEBUG
 
     // Set up data structures on host
     using uint_float = std::pair<compute::uint_, compute::float_>;
@@ -99,7 +100,7 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     const auto perAgentLocalMemorySize =
         std::min(h_nodes.size() * sizeof(uint_float),
                  (std::size_t) gpu.local_memory_size()); // TODO: correct size
-    const auto localWorkSize = perAgentLocalMemorySize / (std::size_t) gpu.local_memory_size();
+    const auto localWorkSize = (std::size_t) gpu.local_memory_size() / perAgentLocalMemorySize;
     assert(localWorkSize >= 1);
     const auto localMemorySize = localWorkSize * perAgentLocalMemorySize;
     assert(localMemorySize <= gpu.local_memory_size());
@@ -149,7 +150,8 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
 
     // Run kernel
     const std::size_t globalWorkSize = numberOfAgents;
-    queue.enqueue_1d_range_kernel(kernel, 0, globalWorkSize, localWorkSize);
+    queue.enqueue_1d_range_kernel(kernel, 0, globalWorkSize,
+        globalWorkSize > localWorkSize ? localWorkSize : globalWorkSize);
     queue.finish();
 
     // Download paths
