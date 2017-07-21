@@ -1,5 +1,7 @@
 // GPU A* program
 
+#define DEBUG 0
+
 // ----- Types ----------------------------------------------------------------
 typedef struct {
     uint  first;
@@ -101,7 +103,7 @@ uint find(OpenList *open, uint value) {
     return open->size;
 }
 
-// Debugging / testing
+#if DEBUG
 bool is_heap(OpenList *open) {
     for (size_t index = 0; index < open->size / 2; ++index) {
         uint_float value = _read_heap(open, index);
@@ -121,6 +123,7 @@ bool is_heap(OpenList *open) {
 
     return true;
 }
+#endif
 
 // ----- Kernel logic ---------------------------------------------------------
 float heuristic(int2 source, int2 destination) {
@@ -204,11 +207,13 @@ __kernel void gpuAStar(__global const int2       *nodes,            // x, y
         const uint current = top(&open);
         pop(&open);
 
+#if DEBUG
         // DEBUG: heap after pop
         if (!is_heap(&open)) {
             returnCode[GID] = 90;
             return; // error: broken heap!
         }
+#endif
 
         if (current == destination) {
             size_t length = recreate_path(nodes, paths + GID * maxPathLength,
@@ -248,11 +253,13 @@ __kernel void gpuAStar(__global const int2       *nodes,            // x, y
             else
                 push(&open, nbNode, nbTotalCost + nbHeuristic);
 
+#if DEBUG
             // DEBUG: heap after push / update
             if (!is_heap(&open)) {
                 returnCode[GID] = 91;
                 return; // error: broken heap!
             }
+#endif
         }
     }
 }

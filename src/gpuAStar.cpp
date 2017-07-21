@@ -96,17 +96,17 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     compute::vector<compute::int2_>  d_paths(numberOfAgents * maxPathLength, context);
 
     using Info = compute::uint4_; // wrong type, but should be a sufficient placeholder
+    static_assert(sizeof(compute::uint_) == sizeof(compute::float_), "Type size check failed!");
 
     // These should ideally be in local memory, but there is not enough space!
     compute::vector<uint_float> d_openExt(numberOfAgents * h_nodes.size(), context);
-    compute::vector<Info>          d_info(numberOfAgents * h_nodes.size(), context);
+    compute::vector<Info>       d_info(numberOfAgents * h_nodes.size(), context);
 
     compute::vector<compute::int_> d_returnCodes(numberOfAgents, context);
 
     // Local memory
-    const std::size_t maxLocalBytes = (std::size_t) (gpu.local_memory_size() * 0.95); // TODO: correct size
+    const std::size_t maxLocalBytes = (std::size_t)(gpu.local_memory_size() * 0.95);
     const auto perAgentLocalBytes = std::min(h_nodes.size() * sizeof(uint_float), maxLocalBytes);
-    // perAgentLocalBytes = (perAgentLocalBytes / sizeof(uint_float)) * sizeof(uint_float); // ensure correct rounding
 
     const auto localWorkSize = maxLocalBytes / perAgentLocalBytes;
     assert(localWorkSize >= 1);
@@ -129,7 +129,8 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
               << "\nLocal memory used:"
               << "\n - Memory per agent: " << bytes(perAgentLocalBytes)
               << "\n - Local work size: " << localWorkSize
-              << "\n - Allocated local memory: " << bytes(localMemoryBytes) << std::endl;
+              << "\n - Allocated local memory: " << bytes(localMemory.size() * sizeof(uint_float))
+              << std::endl;
 
     // Create kernel
     compute::kernel kernel(program, "gpuAStar");
