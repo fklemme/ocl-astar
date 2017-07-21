@@ -3,7 +3,8 @@ BOOSTDIR := $(shell test -d boost && echo local)
 CXXFLAGS += -std=c++14 \
             -O3 \
             -Wall -Wextra \
-			-Wno-unknown-pragmas
+            -Wno-unknown-pragmas \
+            -Wno-ignored-attributes
 LDFLAGS  += -lOpenCL
 
 ifeq ($(BOOSTDIR), local)
