@@ -1,6 +1,7 @@
 // GPU A* program
 
 #define DEBUG 0
+#define SQRT2 1.41421356237f
 
 // ----- Types ----------------------------------------------------------------
 typedef struct {
@@ -19,7 +20,7 @@ typedef struct {
     uint  closed;
     float totalCost;
     uint  predecessor;
-    uint  _reserved;   // for memory alignment
+    uint  _reserved; // for memory alignment
 } Info;
 
 // ----- Helper ---------------------------------------------------------------
@@ -126,9 +127,14 @@ bool is_heap(OpenList *open) {
 #endif
 
 // ----- Kernel logic ---------------------------------------------------------
+// http://theory.stanford.edu/~amitp/GameProgramming/Heuristics.html#diagonal-distance
 float heuristic(int2 source, int2 destination) {
-    const int2 diff = destination - source;
-    return sqrt((float) (diff.x * diff.x + diff.y * diff.y));
+    // const int2 diff = destination - source;
+    // return sqrt((float) (diff.x * diff.x + diff.y * diff.y));
+
+    const int dx = abs(destination.x - source.x);
+    const int dy = abs(destination.y - source.y);
+    return (dx + dy) + (SQRT2 - 2) * min(dx, dy);
 }
 
 size_t recreate_path(__global const int2  *nodes,
