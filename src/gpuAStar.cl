@@ -1,55 +1,95 @@
 // GPU A* program
 
+// ----- Types ----------------------------------------------------------------
 typedef struct {
-    uint  x;
-    float y;
+    uint  first;
+    float second;
 } uint_float;
 
-void push(__local uint_float *heap, size_t *size, uint value, float cost) {
+typedef struct {
+    __local  uint_float *localMem;
+    const    size_t      localSize;
+    __global uint_float *globalExt;
+             size_t      size;
+} OpenList;
+
+// ----- Helper ---------------------------------------------------------------
+uint_float _read_heap(OpenList *open, size_t index) {
+    return index < open->localSize ?
+        open->localMem[index] :
+        open->globalExt[index - open->localSize];
+}
+
+void _write_heap(OpenList *open, size_t index, uint value, float cost) {
+    if (index < open->localSize)
+        open->localMem[index] = (uint_float){value, cost};
+    else
+        open->globalExt[index - open->localSize] = (uint_float){value, cost};
+}
+
+// ----- OpenList functions ---------------------------------------------------
+uint top(OpenList *open) {
+    return open->localMem[0].first;
+}
+
+void _push_impl(OpenList *open, size_t *size, uint value, float cost) {
     size_t index = (*size)++;
 
     while (index > 0) {
         size_t parent = (index - 1) / 2;
 
-        if (cost < heap[parent].y) {
-            heap[index] = heap[parent];
+        uint_float pValue = _read_heap(open, parent);
+        if (cost < pValue.second) {
+            _write_heap(open, index, pValue.first, pValue.second);
             index = parent;
         } else
             break;
     }
 
-    heap[index] = (uint_float){value, cost};
+    _write_heap(open, index, value, cost);
 }
 
-void update(__local uint_float *heap, size_t index, uint value, float cost) {
-    push(heap, &index, value, cost);
+void push(OpenList *open, uint value, float cost) {
+    _push_impl(open, &open->size, value, cost);
 }
 
-void pop(__local uint_float *heap, size_t *size) {
-    uint_float value = heap[--(*size)];
+void update(OpenList *open, size_t index, uint value, float cost) {
+    _push_impl(open, &index, value, cost);
+}
+
+void pop(OpenList *open) {
+    uint_float value = _read_heap(open, --(open->size));
     size_t     index = 0;
 
-    while (index < *size / 2) {
+    while (index < open->size / 2) {
         size_t child = index * 2 + 1;
 
-        if (child + 1 < *size && heap[child + 1].y < heap[child].y)
-            ++child;
+        uint_float cValue = _read_heap(open, child);
+        if (child + 1 < open->size) {
+            uint_float c1Value = _read_heap(open, child + 1);
 
-        if (heap[child].y < value.y) {
-            heap[index] = heap[child];
+            if (c1Value.second < cValue.second) {
+                ++child;
+                cValue = c1Value;
+            }
+        }
+
+        if (cValue.second < value.second) {
+            _write_heap(open, index, cValue.first, cValue.second);
             index = child;
         } else
             break;
     }
 
-    heap[index] = value;
+    _write_heap(open, index, value.first, value.second);
 }
 
-uint find(__local uint_float *heap, size_t *size, uint value) {
+uint find(OpenList *open, uint value) {
     uint index = 0;
 
-    while (index < *size) {
-        if (heap[index].x == value)
+    while (index < open->size) {
+        uint_float iValue = _read_heap(open, index);
+        if (iValue.first == value)
             break;
     }
 
@@ -57,23 +97,31 @@ uint find(__local uint_float *heap, size_t *size, uint value) {
 }
 
 // Debugging / testing
-bool is_heap(__local uint_float *heap, size_t *size) {
-    for (size_t index = 0; index < *size / 2; ++index) {
+bool is_heap(OpenList *open) {
+    for (size_t index = 0; index < open->size / 2; ++index) {
         size_t left  = index * 2 + 1;
         size_t right = index * 2 + 2;
 
-        if (heap[left].y < heap[index].y)
+        uint_float iValue = _read_heap(open, index);
+        uint_float lValue = _read_heap(open, left);
+        
+        if (lValue.second < iValue.second)
             return false;
-        if (right < *size && heap[right].y < heap[index].y)
-            return false;
+
+        if (right < open->size) {
+            uint_float rValue = _read_heap(open, right);
+            if (rValue.second < iValue.second)
+                return false;
+        }
     }
 
     return true;
 }
 
+// ----- Kernel ---------------------------------------------------------------
 float heuristic(int2 source, int2 destination) {
     const int2 diff = destination - source;
-    return sqrt((float) diff.x * diff.x + diff.y * diff.y);
+    return sqrt((float) (diff.x * diff.x + diff.y * diff.y));
 }
 
 __kernel void gpuAStar(__global const int2       *nodes,            // x, y
@@ -82,31 +130,39 @@ __kernel void gpuAStar(__global const int2       *nodes,            // x, y
                                 const ulong       edgesSize,
                        __global const uint2      *adjacencyMap,     // edges_begin, edges_end
                                 const ulong       adjacencyMapSize,
-                                const ulong       numberOfAgents,   // offset = GID * maxPathLength; for per-thread arguments below
+                                const ulong       numberOfAgents,   // provides offset for per-thread arguments below
          /* input:  */ __global const uint2      *srcDstList,       // source id, destination id
-         /* output: */ __global       int2       *paths,            // x, y
+         /* output: */ __global       int2       *paths,            // x, y; offset = GID * maxPathLength;
                                 const ulong       maxPathLength,
-                       __local        uint_float *open,             // id, cost
+                       __local        uint_float *openLocal,        // id, cost
+                                const ulong       openLocalSize,    // per agent local memory
+                       __global       uint_float *openGlobalExt,    // id, cost; fallback if out of local memory
                        __global       float      *info)             // total cost; or -1.0f ^= visited
 {
     const size_t GID = get_global_id(0);
-    size_t openSize = 0;
+    const size_t LID = get_local_id(0);
 
     if (GID >= numberOfAgents)
         return;
+
+    OpenList open = {openLocal + LID * openLocalSize,
+                     openLocalSize,
+                     openGlobalExt + GID * nodesSize,
+                     0};
 
     const uint source      = srcDstList[GID].x;
     const uint destination = srcDstList[GID].y;
 
     // Initialize result in case no path is found.
+    // If the first node in path is not source, we can expect a failure.
     paths[GID * maxPathLength] = nodes[destination];
 
     // Begin at source
-    push(open, &openSize, source, 0.0f);
+    push(&open, source, 0.0f);
 
-    while (openSize > 0) {
-        const uint current = open[0].x;
-        pop(open, &openSize);
+    while (open.size > 0) {
+        const uint current = top(&open);
+        pop(&open);
 
         if (current == destination)
             break; // TODO
@@ -116,24 +172,24 @@ __kernel void gpuAStar(__global const int2       *nodes,            // x, y
 
         const uint2 neighbors = adjacencyMap[current];
         for (uint neighbor = neighbors.x; neighbor != neighbors.y; ++neighbor) {
-            const uint  nbNode     = edges[neighbor].x;
-            const float nbStepCost = edges[neighbor].y;
+            const uint  nbNode     = edges[neighbor].first;
+            const float nbStepCost = edges[neighbor].second;
 
             if (info[current] < 0.0f) // closed
                 continue;
 
             const float nbTotalCost = totalCost + nbStepCost;
-            const uint  nbIndex = find(open, &openSize, neighbor);
+            const uint  nbIndex = find(&open, neighbor);
 
-            if (nbIndex < openSize && info[neighbor] <= nbTotalCost)
+            if (nbIndex < open.size && info[neighbor] <= nbTotalCost)
                 continue;
 
             const float nbHeuristic = heuristic(nodes[neighbor], nodes[destination]);
 
-            if (nbIndex < openSize)
-                update(open, nbIndex, nbNode, nbTotalCost + nbHeuristic);
+            if (nbIndex < open.size)
+                update(&open, nbIndex, nbNode, nbTotalCost + nbHeuristic);
             else
-                push(open, &openSize, nbNode, nbTotalCost + nbHeuristic);
+                push(&open, nbNode, nbTotalCost + nbHeuristic);
         }
     }
 }
