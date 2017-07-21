@@ -1,9 +1,10 @@
 #include "astar.h"
 
 // For debugging
-#define BOOST_COMPUTE_DEBUG_KERNEL_COMPILATION
+//#define BOOST_COMPUTE_DEBUG_KERNEL_COMPILATION
 
 #include <algorithm>
+#include <chrono>
 #include <iostream> // DEBUG
 #include <iterator>
 #include <limits>
@@ -155,26 +156,33 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     kernel.set_arg(14, d_retCodeLength);
 
     // Upload data
+    std::vector<Info> h_info(d_info.size(), {0, 0, 0, 0}); // just to have it well initialized
+
+    const auto uploadStart = std::chrono::high_resolution_clock::now();
     compute::copy(h_nodes.begin(), h_nodes.end(), d_nodes.begin(), queue);
     compute::copy(h_edges.begin(), h_edges.end(), d_edges.begin(), queue);
     compute::copy(h_adjacencyMap.begin(), h_adjacencyMap.end(), d_adjacencyMap.begin(), queue);
     compute::copy(h_srcDstList.begin(), h_srcDstList.end(), d_srcDstList.begin(), queue);
-
-    std::vector<Info> h_info(d_info.size(), {0, 0, 0, 0}); // just to have it well initialized
     compute::copy(h_info.begin(), h_info.end(), d_info.begin(), queue);
+    const auto uploadStop = std::chrono::high_resolution_clock::now();
 
     // Run kernel
     const std::size_t globalWorkSize = numberOfAgents;
+
+    const auto kernelStart = std::chrono::high_resolution_clock::now();
     queue.enqueue_1d_range_kernel(kernel, 0, globalWorkSize,
                                   globalWorkSize > localWorkSize ? localWorkSize : globalWorkSize);
     queue.finish();
+    const auto kernelStop = std::chrono::high_resolution_clock::now();
 
     // Download data
     std::vector<compute::int2_> h_paths(d_paths.size()); // x, y
     std::vector<compute::int2_> h_retCodeLength(d_retCodeLength.size());
 
+    const auto downloadStart = std::chrono::high_resolution_clock::now();
     compute::copy(d_paths.begin(), d_paths.end(), h_paths.begin(), queue);
     compute::copy(d_retCodeLength.begin(), d_retCodeLength.end(), h_retCodeLength.begin(), queue);
+    const auto downloadStop = std::chrono::high_resolution_clock::now();
 
     // Convert paths
     std::vector<std::vector<Node>> paths(numberOfAgents);
@@ -194,6 +202,16 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
             paths[i].emplace_back(graph, position);
         }
     }
+
+    // Print timings
+    std::cout << "GPU time for " << numberOfAgents << " runs: "
+              << "\n - Upload time: "
+              << std::chrono::duration<double>(uploadStop - uploadStart).count() << " seconds"
+              << "\n - Kernel runtime: "
+              << std::chrono::duration<double>(kernelStop - kernelStart).count() << " seconds"
+              << "\n - Download time: "
+              << std::chrono::duration<double>(downloadStop - downloadStart).count() << " seconds"
+              << std::endl;
 
     return paths;
 }

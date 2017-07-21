@@ -2,6 +2,7 @@
 #include "astar.h"
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <iostream>
 #include <random>
 #include <vector>
@@ -40,8 +41,17 @@ int main() {
 
     // CPU (reference) runs
     std::vector<std::vector<Node>> cpuPaths;
+    cpuPaths.reserve(srcDstList.size());
+
+    const auto cpuStart = std::chrono::high_resolution_clock::now();
     for (const auto &srcDst : srcDstList)
         cpuPaths.emplace_back(cpuAStar(graph, srcDst.first, srcDst.second));
+    const auto cpuStop = std::chrono::high_resolution_clock::now();
+
+    // Print cpu timing
+    std::cout << "CPU time for " << pathCount
+              << " runs: " << std::chrono::duration<double>(cpuStop - cpuStart).count()
+              << " seconds" << std::endl;
 
     // Print graph (with first path) to image
     graph.toPfm("cpuAStar.pfm", cpuPaths.front());
@@ -57,10 +67,10 @@ int main() {
             const auto &gpuPath = gpuPaths[i];
 
             if (std::equal(cpuPath.begin(), cpuPath.end(), gpuPath.begin(), gpuPath.end())) {
-                std::cout << "GPU A* " << i << ": Gold test passed! (exact match)" << std::endl;
+                // std::cout << "GPU A* " << i << ": Gold test passed! (exact match)" << std::endl;
             } else if (cpuPath.size() == gpuPath.size() &&
                        std::abs(costs(cpuPath) - costs(gpuPath)) < 0.1f) {
-                std::cout << "GPU A* " << i << ": Gold test passed! (equal match)" << std::endl;
+                // std::cout << "GPU A* " << i << ": Gold test passed! (equal match)" << std::endl;
             } else {
                 std::cerr << "GPU A* " << i << ": Gold test failed!"
                           << "\n - Path length CPU: " << cpuPath.size()
