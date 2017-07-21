@@ -19,11 +19,11 @@ static float costs(const std::vector<Node> &path) {
 
 int main() {
     // Generate graph and obstacles
-    Graph graph(50, 50);
+    Graph graph(200, 200);
     graph.generateObstacles();
 
     const Position start{10, 20};
-    const Position destination{30, 40};
+    const Position destination{180, 190};
 
     // CPU (reference) run
     const auto cpuPath = cpuAStar(graph, start, destination);
@@ -35,7 +35,9 @@ int main() {
         const auto &gpuPath = gpuPaths.front(); // path from first agent
 
         if (std::equal(cpuPath.begin(), cpuPath.end(), gpuPath.begin(), gpuPath.end())) {
-            std::cout << "GPU A*: Gold test passed!" << std::endl;
+            std::cout << "GPU A*: Gold test passed! (exact match)" << std::endl;
+        } else if (cpuPath.size() == gpuPath.size() && std::abs(costs(cpuPath) - costs(gpuPath)) < 0.1f) {
+            std::cout << "GPU A*: Gold test passed! (equal match)" << std::endl;
         } else {
             std::cerr << "GPU A*: Gold test failed!"
                       << "\nPath length CPU: " << cpuPath.size() << ", GPU: " << gpuPath.size()

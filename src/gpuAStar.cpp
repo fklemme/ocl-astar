@@ -95,21 +95,26 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     compute::vector<compute::uint2_> d_srcDstList(h_srcDstList.size(), context);
     compute::vector<compute::int2_>  d_paths(numberOfAgents * maxPathLength, context);
 
-    // Should ideally be in local memory, but probably not enough space!
-    compute::vector<uint_float> d_openExt(numberOfAgents * h_nodes.size(), context);
     using Info = compute::uint4_; // wrong type, but should be a sufficient placeholder
+
+    // These should ideally be in local memory, but there is not enough space!
+    compute::vector<uint_float> d_openExt(numberOfAgents * h_nodes.size(), context);
     compute::vector<Info>          d_info(numberOfAgents * h_nodes.size(), context);
+
     compute::vector<compute::int_> d_returnCodes(numberOfAgents, context);
 
     // Local memory
-    const auto perAgentLocalMemoryBytes =
-        std::min(h_nodes.size() * sizeof(uint_float),
-                 (std::size_t) gpu.local_memory_size()); // TODO: correct size
-    const auto localWorkSize = (std::size_t) gpu.local_memory_size() / perAgentLocalMemoryBytes;
+    const std::size_t maxLocalBytes = (std::size_t) (gpu.local_memory_size() * 0.95); // TODO: correct size
+    const auto perAgentLocalBytes = std::min(h_nodes.size() * sizeof(uint_float), maxLocalBytes);
+    // perAgentLocalBytes = (perAgentLocalBytes / sizeof(uint_float)) * sizeof(uint_float); // ensure correct rounding
+
+    const auto localWorkSize = maxLocalBytes / perAgentLocalBytes;
     assert(localWorkSize >= 1);
-    const auto localMemoryBytes = localWorkSize * perAgentLocalMemoryBytes;
-    const auto localMemorySize = localMemoryBytes / sizeof(uint_float);
+
+    const auto localMemoryBytes = localWorkSize * perAgentLocalBytes;
     assert(localMemoryBytes <= gpu.local_memory_size());
+
+    const auto localMemorySize = localMemoryBytes / sizeof(uint_float);
     const auto localMemory = compute::local_buffer<uint_float>(localMemorySize);
 
     // DEBUG
@@ -120,11 +125,11 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
               << "\n - SrcDst list: " << bytes(d_srcDstList.size() * sizeof(compute::uint2_))
               << "\n - Paths: " << bytes(d_paths.size() * sizeof(compute::int2_))
               << "\n - Open list (ext): " << bytes(d_openExt.size() * sizeof(uint_float))
-              << "\n - Info table: " << bytes(d_openExt.size() * sizeof(Info))
+              << "\n - Info table: " << bytes(d_info.size() * sizeof(Info))
               << "\nLocal memory used:"
-              << "\n - Memory per agent: " << bytes(perAgentLocalMemoryBytes)
+              << "\n - Memory per agent: " << bytes(perAgentLocalBytes)
               << "\n - Local work size: " << localWorkSize
-              << "\n - Allocated local memory: " << bytes(localMemorySize) << std::endl;
+              << "\n - Allocated local memory: " << bytes(localMemoryBytes) << std::endl;
 
     // Create kernel
     compute::kernel kernel(program, "gpuAStar");
@@ -139,7 +144,7 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     kernel.set_arg(8, d_paths);
     kernel.set_arg<compute::ulong_>(9, maxPathLength);
     kernel.set_arg(10, localMemory); // open list
-    kernel.set_arg<compute::ulong_>(11, perAgentLocalMemoryBytes / sizeof(uint_float));
+    kernel.set_arg<compute::ulong_>(11, localMemorySize / localWorkSize);
     kernel.set_arg(12, d_openExt);
     kernel.set_arg(13, d_info);
     kernel.set_arg(14, d_returnCodes);

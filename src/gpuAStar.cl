@@ -7,18 +7,18 @@ typedef struct {
 } uint_float;
 
 typedef struct {
-    uint  closed;
-    float totalCost;
-    uint  predecessor;
-    uint  _reserved;   // for memory alignment
-} Info;
-
-typedef struct {
     __local  uint_float *localMem;
     const    size_t      localSize;
     __global uint_float *globalExt;
              size_t      size;
 } OpenList;
+
+typedef struct {
+    uint  closed;
+    float totalCost;
+    uint  predecessor;
+    uint  _reserved;   // for memory alignment
+} Info;
 
 // ----- Helper ---------------------------------------------------------------
 uint_float _read_heap(OpenList *open, size_t index) {
