@@ -34,17 +34,21 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     const auto numberOfAgents = srcDstList.size();
 
     // Set up OpenCL environment and build program
-    compute::device gpu = compute::system::default_device();
+    // compute::device clDevice = compute::system::default_device();
+
+    // DEBUG: Use CPU
+    auto clDevice = compute::system::devices().at(1); // expect second device to be the CPU
 
     // DEBUG
-    std::cout << "OpenCL device: " << gpu.name() << "\n - Compute units: " << gpu.compute_units()
-              << "\n - Global memory: " << bytes(gpu.global_memory_size())
-              << "\n - Local memory: " << bytes(gpu.local_memory_size())
+    std::cout << "OpenCL device: " << clDevice.name()
+              << "\n - Compute units: " << clDevice.compute_units()
+              << "\n - Global memory: " << bytes(clDevice.global_memory_size())
+              << "\n - Local memory: " << bytes(clDevice.local_memory_size())
               << "\n - Max. memory allocation: "
-              << bytes(gpu.get_info<CL_DEVICE_MAX_MEM_ALLOC_SIZE>()) << std::endl;
+              << bytes(clDevice.get_info<CL_DEVICE_MAX_MEM_ALLOC_SIZE>()) << std::endl;
 
-    compute::context       context(gpu);
-    compute::command_queue queue(context, gpu);
+    compute::context       context(clDevice);
+    compute::command_queue queue(context, clDevice);
 
     auto program = compute::program::create_with_source_file("src/gpuAStar.cl", context);
     program.build(/* "-O0" */); // FIXME: -O0 somehow prevents crash on AMD
@@ -105,14 +109,14 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     compute::vector<compute::int_> d_returnCodes(numberOfAgents, context);
 
     // Local memory
-    const std::size_t maxLocalBytes = (std::size_t)(gpu.local_memory_size() * 0.95);
+    const std::size_t maxLocalBytes = (std::size_t)(clDevice.local_memory_size() * 0.95);
     const auto perAgentLocalBytes = std::min(h_nodes.size() * sizeof(uint_float), maxLocalBytes);
 
     const auto localWorkSize = maxLocalBytes / perAgentLocalBytes;
     assert(localWorkSize >= 1);
 
     const auto localMemoryBytes = localWorkSize * perAgentLocalBytes;
-    assert(localMemoryBytes <= gpu.local_memory_size());
+    assert(localMemoryBytes <= clDevice.local_memory_size());
 
     const auto localMemorySize = localMemoryBytes / sizeof(uint_float);
     const auto localMemory = compute::local_buffer<uint_float>(localMemorySize);
