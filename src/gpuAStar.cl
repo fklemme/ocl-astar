@@ -181,7 +181,7 @@ __kernel void gpuAStar(__global const int2       *nodes,            // x, y
                                 const ulong       openLocalSize,    // per agent (local memory) open list size
                        __global       uint_float *openGlobalExt,    // open lists: id, cost; fallback if out of local memory
                        __global       Info       *infos,            // closed lists, see members at the top
-                       __global       int        *returnCode)       // return code (for debugging purposes)
+                       __global       int2       *retCodeLength)    // return code and length of path
 {
     const size_t GID = get_global_id(0);
     const size_t LID = get_local_id(0);
@@ -202,7 +202,7 @@ __kernel void gpuAStar(__global const int2       *nodes,            // x, y
     // Initialize result in case no path is found.
     // If the first node in path is not source, we can expect a failure.
     paths[GID * maxPathLength] = nodes[destination];
-    returnCode[GID] = 1; // failure: no path found!
+    retCodeLength[GID] = (int2){1, 0}; // failure: no path found!
 
     info[source].predecessor = source; // to recreate path
 
@@ -216,7 +216,7 @@ __kernel void gpuAStar(__global const int2       *nodes,            // x, y
 #if DEBUG
         // DEBUG: heap after pop
         if (!is_heap(&open)) {
-            returnCode[GID] = 90;
+            retCodeLength[GID] = (int2){90, 0};
             return; // error: broken heap!
         }
 #endif
@@ -224,9 +224,11 @@ __kernel void gpuAStar(__global const int2       *nodes,            // x, y
         if (current == destination) {
             size_t length = recreate_path(nodes, paths + GID * maxPathLength,
                                           maxPathLength, info, destination);
-            returnCode[GID] = length < maxPathLength ?
-                0 : // success: path found!
-                2;  // failure: path too long!
+            retCodeLength[GID] = (int2){
+                length < maxPathLength ?
+                    0 : // success: path found!
+                    2,  // failure: path too long!
+                length};
             return;
         }
 
@@ -262,7 +264,7 @@ __kernel void gpuAStar(__global const int2       *nodes,            // x, y
 #if DEBUG
             // DEBUG: heap after push / update
             if (!is_heap(&open)) {
-                returnCode[GID] = 91;
+                retCodeLength[GID] = (int2){91, 0};
                 return; // error: broken heap!
             }
 #endif

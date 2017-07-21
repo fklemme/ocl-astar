@@ -34,10 +34,10 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     const auto numberOfAgents = srcDstList.size();
 
     // Set up OpenCL environment and build program
-    // compute::device clDevice = compute::system::default_device();
+    compute::device clDevice = compute::system::default_device();
 
     // DEBUG: Use CPU
-    auto clDevice = compute::system::devices().at(1); // expect second device to be the CPU
+    // auto clDevice = compute::system::devices().at(1); // expect second device to be the CPU
 
     // DEBUG
     std::cout << "OpenCL device: " << clDevice.name()
@@ -51,7 +51,7 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     compute::command_queue queue(context, clDevice);
 
     auto program = compute::program::create_with_source_file("src/gpuAStar.cl", context);
-    program.build(/* "-O0" */); // FIXME: -O0 somehow prevents crash on AMD
+    program.build(); // FIXME: -O0 somehow prevents crash on AMD
 
     // Set up data structures on host
     using uint_float = std::pair<compute::uint_, compute::float_>;
@@ -106,7 +106,7 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     compute::vector<uint_float> d_openExt(numberOfAgents * h_nodes.size(), context);
     compute::vector<Info>       d_info(numberOfAgents * h_nodes.size(), context);
 
-    compute::vector<compute::int_> d_returnCodes(numberOfAgents, context);
+    compute::vector<compute::int2_> d_retCodeLength(numberOfAgents, context);
 
     // Local memory
     const std::size_t maxLocalBytes = (std::size_t)(clDevice.local_memory_size() * 0.95);
@@ -152,7 +152,7 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     kernel.set_arg<compute::ulong_>(11, localMemorySize / localWorkSize);
     kernel.set_arg(12, d_openExt);
     kernel.set_arg(13, d_info);
-    kernel.set_arg(14, d_returnCodes);
+    kernel.set_arg(14, d_retCodeLength);
 
     // Upload data
     compute::copy(h_nodes.begin(), h_nodes.end(), d_nodes.begin(), queue);
@@ -171,38 +171,29 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
 
     // Download data
     std::vector<compute::int2_> h_paths(d_paths.size()); // x, y
-    std::vector<compute::int_>  h_returnCodes(d_returnCodes.size());
+    std::vector<compute::int2_> h_retCodeLength(d_retCodeLength.size());
 
     compute::copy(d_paths.begin(), d_paths.end(), h_paths.begin(), queue);
-    compute::copy(d_returnCodes.begin(), d_returnCodes.end(), h_returnCodes.begin(), queue);
+    compute::copy(d_retCodeLength.begin(), d_retCodeLength.end(), h_retCodeLength.begin(), queue);
 
-    // TODO: Convert paths
+    // Convert paths
     std::vector<std::vector<Node>> paths(numberOfAgents);
     for (std::size_t i = 0; i < numberOfAgents; ++i) {
-        const auto begin = std::next(h_paths.begin(), i * maxPathLength);
-        const auto end = std::next(begin, maxPathLength);
-        const auto source = srcDstList[i].first;
-        const auto destination = srcDstList[i].second;
+        const int returnCode = h_retCodeLength[i][0];
+        const int pathLength = h_retCodeLength[i][1];
 
-        const Position firstPosition{(int) (*begin)[0], (int) (*begin)[1]};
-        if (firstPosition != source)
-            continue; // no path found
+        if (returnCode != 0)
+            continue;
+
+        paths[i].reserve(pathLength);
+        const auto begin = std::next(h_paths.begin(), i * maxPathLength);
+        const auto end = std::next(begin, pathLength);
 
         for (auto it = begin; it != end; ++it) {
             const Position position{(int) (*it)[0], (int) (*it)[1]};
             paths[i].emplace_back(graph, position);
-
-            // End of path
-            if (position == destination)
-                break;
         }
     }
-
-    // DEBUG
-    std::cout << "Return codes:";
-    for (auto returnCode : h_returnCodes)
-        std::cout << ' ' << returnCode;
-    std::cout << std::endl;
 
     return paths;
 }
