@@ -20,11 +20,11 @@ uint_float _read_heap(OpenList *open, size_t index) {
         open->globalExt[index - open->localSize];
 }
 
-void _write_heap(OpenList *open, size_t index, uint value, float cost) {
+void _write_heap(OpenList *open, size_t index, uint_float value) {
     if (index < open->localSize)
-        open->localMem[index] = (uint_float){value, cost};
+        open->localMem[index] = value;
     else
-        open->globalExt[index - open->localSize] = (uint_float){value, cost};
+        open->globalExt[index - open->localSize] = value;
 }
 
 // ----- OpenList functions ---------------------------------------------------
@@ -40,13 +40,13 @@ void _push_impl(OpenList *open, size_t *size, uint value, float cost) {
 
         uint_float pValue = _read_heap(open, parent);
         if (cost < pValue.second) {
-            _write_heap(open, index, pValue.first, pValue.second);
+            _write_heap(open, index, pValue);
             index = parent;
         } else
             break;
     }
 
-    _write_heap(open, index, value, cost);
+    _write_heap(open, index, (uint_float){value, cost});
 }
 
 void push(OpenList *open, uint value, float cost) {
@@ -75,13 +75,13 @@ void pop(OpenList *open) {
         }
 
         if (cValue.second < value.second) {
-            _write_heap(open, index, cValue.first, cValue.second);
+            _write_heap(open, index, cValue);
             index = child;
         } else
             break;
     }
 
-    _write_heap(open, index, value.first, value.second);
+    _write_heap(open, index, value);
 }
 
 uint find(OpenList *open, uint value) {
@@ -99,18 +99,17 @@ uint find(OpenList *open, uint value) {
 // Debugging / testing
 bool is_heap(OpenList *open) {
     for (size_t index = 0; index < open->size / 2; ++index) {
-        size_t left  = index * 2 + 1;
-        size_t right = index * 2 + 2;
+        uint_float value = _read_heap(open, index);
+        size_t     left   = index * 2 + 1;
+        size_t     right  = index * 2 + 2;
 
-        uint_float iValue = _read_heap(open, index);
         uint_float lValue = _read_heap(open, left);
-        
-        if (lValue.second < iValue.second)
+        if (lValue.second < value.second)
             return false;
 
         if (right < open->size) {
             uint_float rValue = _read_heap(open, right);
-            if (rValue.second < iValue.second)
+            if (rValue.second < value.second)
                 return false;
         }
     }
