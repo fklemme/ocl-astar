@@ -27,7 +27,7 @@ int main() {
     graph.generateObstacles();
 
     // Generate source/destination pairs
-    const int                          pathCount = 100;
+    const int                          pathCount = 500;
     std::random_device                 rd;
     std::default_random_engine         generator(rd());
     std::uniform_int_distribution<int> distX(0, graph.width() - 1);
