@@ -1,11 +1,12 @@
 #include "astar.h"
 
 // For debugging
-//#define BOOST_COMPUTE_DEBUG_KERNEL_COMPILATION
+#define BOOST_COMPUTE_DEBUG_KERNEL_COMPILATION
 
 #include <algorithm>
 #include <chrono>
-#include <iostream> // DEBUG
+#include <cmath>
+#include <iostream>
 #include <iterator>
 #include <limits>
 #include <string>
@@ -34,25 +35,34 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
 
     const auto numberOfAgents = srcDstList.size();
 
-    // Set up OpenCL environment and build program
+#if 1
+    // Select default OpenCL device
     compute::device clDevice = compute::system::default_device();
+#else
+    // Workaround for testing on broken AMD system: Use CPU instead.
+    auto clDevice = []() {
+        for (auto d : compute::system::devices())
+            if (d.type() == compute::device::cpu)
+                return d;
+        return compute::system::default_device();
+    }();
+#endif
 
-    // DEBUG: Use CPU
-    // auto clDevice = compute::system::devices().at(1); // expect second device to be the CPU
-
-    // DEBUG
+#ifdef DEBUG_OUTPUT
     std::cout << "OpenCL device: " << clDevice.name()
               << "\n - Compute units: " << clDevice.compute_units()
               << "\n - Global memory: " << bytes(clDevice.global_memory_size())
               << "\n - Local memory: " << bytes(clDevice.local_memory_size())
               << "\n - Max. memory allocation: "
               << bytes(clDevice.get_info<CL_DEVICE_MAX_MEM_ALLOC_SIZE>()) << std::endl;
+#endif
 
+    // Set up OpenCL environment and build program
     compute::context       context(clDevice);
     compute::command_queue queue(context, clDevice);
 
     auto program = compute::program::create_with_source_file("src/gpuAStar.cl", context);
-    program.build(); // FIXME: -O0 somehow prevents crash on AMD
+    program.build(); // Hint: Passing "-O0" somehow prevents compiler crash on AMD
 
     // Set up data structures on host
     using uint_float = std::pair<compute::uint_, compute::float_>;
@@ -103,18 +113,20 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     using Info = compute::uint4_; // wrong type, but should be a sufficient placeholder
     static_assert(sizeof(compute::uint_) == sizeof(compute::float_), "Type size check failed!");
 
-    // These should ideally be in local memory, but there is not enough space!
+    // These should ideally be in local memory, but there is just not enough space!
     compute::vector<uint_float> d_openExt(numberOfAgents * h_nodes.size(), context);
     compute::vector<Info>       d_info(numberOfAgents * h_nodes.size(), context);
 
+    // Not necessarily needed, but comfy
     compute::vector<compute::int2_> d_retCodeLength(numberOfAgents, context);
 
-    // Local memory
-    const std::size_t maxLocalBytes = (std::size_t)(clDevice.local_memory_size() * 0.95);
-    const auto perAgentLocalBytes = std::min(h_nodes.size() * sizeof(uint_float), maxLocalBytes);
+    // Local memory: Some magic to find a good value for local memory size per agent.
+    const auto maxLocalBytes = (std::size_t)(clDevice.local_memory_size() * 0.95);
+    const auto perAgentTargetBytes = (std::size_t)(h_nodes.size() * sizeof(uint_float) * 0.5);
+    const auto perAgentLocalBytes = std::min(perAgentTargetBytes, maxLocalBytes);
 
-    const auto localWorkSize = maxLocalBytes / perAgentLocalBytes;
-    assert(localWorkSize >= 1);
+    const auto localWorkSize =
+        (std::size_t)(1 << (int) std::log2(maxLocalBytes / perAgentLocalBytes));
 
     const auto localMemoryBytes = localWorkSize * perAgentLocalBytes;
     assert(localMemoryBytes <= clDevice.local_memory_size());
@@ -122,7 +134,7 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     const auto localMemorySize = localMemoryBytes / sizeof(uint_float);
     const auto localMemory = compute::local_buffer<uint_float>(localMemorySize);
 
-    // DEBUG
+#ifdef DEBUG_OUTPUT
     std::cout << "Global memory used:"
               << "\n - Nodes: " << bytes(h_nodes.size() * sizeof(compute::int2_))
               << "\n - Edges: " << bytes(h_edges.size() * sizeof(uint_float))
@@ -136,6 +148,7 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
               << "\n - Local work size: " << localWorkSize
               << "\n - Allocated local memory: " << bytes(localMemory.size() * sizeof(uint_float))
               << std::endl;
+#endif
 
     // Create kernel
     compute::kernel kernel(program, "gpuAStar");
@@ -155,9 +168,10 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     kernel.set_arg(13, d_info);
     kernel.set_arg(14, d_retCodeLength);
 
-    // Upload data
-    std::vector<Info> h_info(d_info.size(), {0, 0, 0, 0}); // just to have it well initialized
+    // This initialization could be done by a kernel as well.
+    std::vector<Info> h_info(d_info.size(), {0, 0, 0, 0});
 
+    // Upload data
     const auto uploadStart = std::chrono::high_resolution_clock::now();
     compute::copy(h_nodes.begin(), h_nodes.end(), d_nodes.begin(), queue);
     compute::copy(h_edges.begin(), h_edges.end(), d_edges.begin(), queue);

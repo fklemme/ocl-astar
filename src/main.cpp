@@ -23,12 +23,11 @@ static float costs(const std::vector<Node> &path) {
 
 int main() {
     // Generate graph and obstacles
-    Graph graph(100, 100);
+    Graph graph(50, 50);
     graph.generateObstacles();
 
     // Generate source/destination pairs
-    const int pathCount = 100;
-
+    const int                          pathCount = 100;
     std::random_device                 rd;
     std::default_random_engine         generator(rd());
     std::uniform_int_distribution<int> distX(0, graph.width() - 1);
@@ -39,10 +38,11 @@ int main() {
         srcDstList.emplace_back(Position{distX(generator), distY(generator)},
                                 Position{distX(generator), distY(generator)});
 
-    // CPU (reference) runs
+    // CPU reference run
     std::vector<std::vector<Node>> cpuPaths;
     cpuPaths.reserve(srcDstList.size());
 
+    std::cout << "CPU reference run..." << std::endl;
     const auto cpuStart = std::chrono::high_resolution_clock::now();
     for (const auto &srcDst : srcDstList)
         cpuPaths.emplace_back(cpuAStar(graph, srcDst.first, srcDst.second));
@@ -54,10 +54,11 @@ int main() {
               << " seconds" << std::endl;
 
     // Print graph (with first path) to image
-    graph.toPfm("cpuAStar.pfm", cpuPaths.front());
+    graph.toPfm("AStarCPU.pfm", cpuPaths.front());
 
     try {
-        // GPU runs
+        // GPU A* run
+        std::cout << "GPU A* run..." << std::endl;
         const auto gpuPaths = gpuAStar(graph, srcDstList);
 
         assert(cpuPaths.size() == gpuPaths.size());
@@ -80,7 +81,7 @@ int main() {
         }
 
         // Print graph (with first path) to image
-        graph.toPfm("gpuAStar.pfm", gpuPaths.front());
+        graph.toPfm("AStarGPU.pfm", gpuPaths.front());
     } catch (std::exception &e) {
         std::cerr << "A* execution failed:\n" << e.what() << std::endl;
     }

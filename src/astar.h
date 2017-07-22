@@ -5,6 +5,9 @@
 #include "Position.h"
 #include <vector>
 
+// Enable printing of debug information from functions below.
+#define DEBUG_OUTPUT
+
 std::vector<Node> cpuAStar(const Graph &graph, const Position &source, const Position &destination);
 
 std::vector<std::vector<Node>>
