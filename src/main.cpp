@@ -27,7 +27,7 @@ static void runAStar() {
     graph.generateObstacles();
 
     // Generate source/destination pairs
-    const int                          pathCount = 100; // should be big
+    const int                          pathCount = 500; // should be big
     std::random_device                 rd;
     std::default_random_engine         generator(rd());
     std::uniform_int_distribution<int> distX(0, graph.width() - 1);

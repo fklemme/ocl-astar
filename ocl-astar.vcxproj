@@ -23,7 +23,7 @@
     <ProjectGuid>{5741EA8C-7770-4AB5-9DC1-8A0F062A1A6B}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>oclastar</RootNamespace>
-    <WindowsTargetPlatformVersion>10.0.14393.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.15063.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -72,23 +72,23 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>$(OCL_ROOT)\include;$(SolutionDir)boost;$(IncludePath)</IncludePath>
-    <LibraryPath>$(OCL_ROOT)\lib\x86;$(SolutionDir)boost\stage\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(OCL_ROOT)\include;$(CUDA_PATH)\include;$(SolutionDir)boost;$(IncludePath)</IncludePath>
+    <LibraryPath>$(OCL_ROOT)\lib\x86;$(CUDA_PATH)\lib\Win32;$(SolutionDir)boost\stage\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>$(OCL_ROOT)\include;$(SolutionDir)boost;$(IncludePath)</IncludePath>
-    <LibraryPath>$(OCL_ROOT)\lib\x86_64;$(SolutionDir)boost\stage\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(OCL_ROOT)\include;$(CUDA_PATH)\include;$(SolutionDir)boost;$(IncludePath)</IncludePath>
+    <LibraryPath>$(OCL_ROOT)\lib\x86_64;$(CUDA_PATH)\lib\x64;$(SolutionDir)boost\stage\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>$(OCL_ROOT)\include;$(SolutionDir)boost;$(IncludePath)</IncludePath>
-    <LibraryPath>$(OCL_ROOT)\lib\x86;$(SolutionDir)boost\stage\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(OCL_ROOT)\include;$(CUDA_PATH)\include;$(SolutionDir)boost;$(IncludePath)</IncludePath>
+    <LibraryPath>$(OCL_ROOT)\lib\x86;$(CUDA_PATH)\lib\Win32;$(SolutionDir)boost\stage\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>$(OCL_ROOT)\include;$(SolutionDir)boost;$(IncludePath)</IncludePath>
-    <LibraryPath>$(OCL_ROOT)\lib\x86_64;$(SolutionDir)boost\stage\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(OCL_ROOT)\include;$(CUDA_PATH)\include;$(SolutionDir)boost;$(IncludePath)</IncludePath>
+    <LibraryPath>$(OCL_ROOT)\lib\x86_64;$(CUDA_PATH)\lib\x64;$(SolutionDir)boost\stage\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
