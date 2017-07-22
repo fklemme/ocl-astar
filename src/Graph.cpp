@@ -6,12 +6,7 @@
 #include <cmath>
 #include <fstream>
 #include <iomanip>
-
-#pragma warning(push)
-// Disable warning for VS 2017
-#pragma warning(disable : 4244) // conversion from 'double' to 'float', possible loss of data
 #include <random>
-#pragma warning(pop)
 
 Graph::Graph(int width, int height) : m_width(width), m_height(height) {
     // Set default cost for each node to 1.0f
@@ -22,8 +17,8 @@ void Graph::generateObstacles(int amount) {
     std::random_device         rd;
     std::default_random_engine generator(rd());
 
-    std::normal_distribution<float> distX(m_width / 2.0f, m_width / 4.0f);
-    std::normal_distribution<float> distY(m_height / 2.0f, m_height / 4.0f);
+    std::normal_distribution<> distX(m_width / 2.0, m_width / 4.0);
+    std::normal_distribution<> distY(m_height / 2.0, m_height / 4.0);
 
     for (int i = 0; i < amount; ++i) {
         const Position center = {(int) std::round(distX(generator)),

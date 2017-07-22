@@ -49,12 +49,20 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
 #endif
 
 #ifdef DEBUG_OUTPUT
+    const auto maxMemAllocSize = clDevice.get_info<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
+    const auto maxWorkGroupSize = clDevice.get_info<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
+    const auto maxWorkItemDimensions = clDevice.get_info<CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS>();
+    const auto maxWorkItemSizes = clDevice.get_info<CL_DEVICE_MAX_WORK_ITEM_SIZES>();
+
     std::cout << "OpenCL device: " << clDevice.name()
               << "\n - Compute units: " << clDevice.compute_units()
               << "\n - Global memory: " << bytes(clDevice.global_memory_size())
               << "\n - Local memory: " << bytes(clDevice.local_memory_size())
-              << "\n - Max. memory allocation: "
-              << bytes(clDevice.get_info<CL_DEVICE_MAX_MEM_ALLOC_SIZE>()) << std::endl;
+              << "\n - Max. memory allocation: " << bytes(maxMemAllocSize)
+              << "\n - Max. work group size: " << maxWorkGroupSize << "\n - Max. work item sizes:";
+    for (unsigned i = 0; i < maxWorkItemDimensions; ++i)
+        std::cout << ' ' << maxWorkItemSizes[i];
+    std::cout << std::endl;
 #endif
 
     // Set up OpenCL environment and build program
@@ -121,13 +129,19 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     compute::vector<compute::int2_> d_retCodeLength(numberOfAgents, context);
 
     // Local memory: Some magic to find a good value for local memory size per agent.
-    const auto maxLocalBytes = (std::size_t)(clDevice.local_memory_size() * 0.95);
-    const auto perAgentTargetBytes = (std::size_t)(h_nodes.size() * sizeof(uint_float) * 0.5);
+    const auto maxLocalBytes = (std::size_t)(clDevice.local_memory_size() *
+                                             0.95); // fails sometimes if you try to allocate 100%
+    const auto perAgentTargetBytes = (std::size_t)(h_nodes.size() * sizeof(uint_float) *
+                                                   0.1); // really hard to pick a good factor here
     const auto perAgentLocalBytes = std::min(perAgentTargetBytes, maxLocalBytes);
 
     const auto localWorkSize =
-        (std::size_t)(1 << (int) std::log2(maxLocalBytes / perAgentLocalBytes));
+        std::min((std::size_t)(1 << (int) std::log2(maxLocalBytes / perAgentLocalBytes)),
+                 clDevice.get_info<CL_DEVICE_MAX_WORK_GROUP_SIZE>());
+    const auto globalWorkSize =
+        (std::size_t) std::ceil((double) numberOfAgents / localWorkSize) * localWorkSize;
 
+    // We *could* do a reevaluation of perAgentTargetBytes now that we've picked a localWorkSize.
     const auto localMemoryBytes = localWorkSize * perAgentLocalBytes;
     assert(localMemoryBytes <= clDevice.local_memory_size());
 
@@ -181,11 +195,8 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     const auto uploadStop = std::chrono::high_resolution_clock::now();
 
     // Run kernel
-    const std::size_t globalWorkSize = numberOfAgents;
-
     const auto kernelStart = std::chrono::high_resolution_clock::now();
-    queue.enqueue_1d_range_kernel(kernel, 0, globalWorkSize,
-                                  globalWorkSize > localWorkSize ? localWorkSize : globalWorkSize);
+    queue.enqueue_1d_range_kernel(kernel, 0, globalWorkSize, localWorkSize);
     queue.finish();
     const auto kernelStop = std::chrono::high_resolution_clock::now();
 
