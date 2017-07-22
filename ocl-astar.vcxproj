@@ -172,6 +172,7 @@
   <ItemGroup>
     <None Include="README.md" />
     <None Include="src\gpuAStar.cl" />
+    <None Include="src\gpuGAStar.cl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

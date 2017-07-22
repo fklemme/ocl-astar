@@ -129,9 +129,6 @@ bool is_heap(OpenList *open) {
 // ----- Kernel logic ---------------------------------------------------------
 // http://theory.stanford.edu/~amitp/GameProgramming/Heuristics.html#diagonal-distance
 float heuristic(int2 source, int2 destination) {
-    // const int2 diff = destination - source;
-    // return sqrt((float) (diff.x * diff.x + diff.y * diff.y));
-
     const int dx = abs(destination.x - source.x);
     const int dy = abs(destination.y - source.y);
     return (dx + dy) + (SQRT2 - 2) * min(dx, dy);

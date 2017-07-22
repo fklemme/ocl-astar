@@ -56,5 +56,8 @@
       <Filter>Resource Files</Filter>
     </None>
     <None Include="README.md" />
+    <None Include="src\gpuGAStar.cl">
+      <Filter>Resource Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

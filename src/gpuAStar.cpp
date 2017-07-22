@@ -1,8 +1,5 @@
 #include "astar.h"
 
-// For debugging
-#define BOOST_COMPUTE_DEBUG_KERNEL_COMPILATION
-
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -11,10 +8,12 @@
 #include <limits>
 #include <string>
 
+#define BOOST_COMPUTE_DEBUG_KERNEL_COMPILATION
+
 #pragma warning(push)
 // Disable warning for VS 2017
-#pragma warning(disable : 4244) // conversion from 'boost::compute::ulong_' to '::size_t', possible
-                                // loss of data
+#pragma warning(disable : 4244) // conversion from 'boost::compute::ulong_' to '::size_t',
+                                // possible loss of data
 #include <boost/compute.hpp>
 #pragma warning(pop)
 
@@ -229,7 +228,7 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     }
 
     // Print timings
-    std::cout << "GPU time for " << numberOfAgents << " runs: "
+    std::cout << "GPU time for " << numberOfAgents << " runs:"
               << "\n - Upload time: "
               << std::chrono::duration<double>(uploadStop - uploadStart).count() << " seconds"
               << "\n - Kernel runtime: "
