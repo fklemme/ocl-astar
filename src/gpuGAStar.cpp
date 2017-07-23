@@ -31,14 +31,15 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
     if (source == destination)
         return {{graph, destination}};
 
-    const std::size_t numberOfQueues = 64; // TODO: How to pick this number?
+    const std::size_t numberOfQueues =
+        clDevice.max_work_group_size(); // TODO: How to pick this number?
     const std::size_t sizeOfAQueue =
-        (std::size_t)(1 << (int) std::ceil(std::log2((double) graph.size() / numberOfQueues)));
+        (std::size_t)(4 << (int) std::ceil(std::log2((double) graph.size() / numberOfQueues)));
     assert(sizeOfAQueue <= std::numeric_limits<compute::uint_>::max());
     std::size_t targetHashTableSize = 1 << 10;         // Just a guess, TODO!
     std::size_t hashTableSize = graph.width() / 3 - 1; // TODO: How to pick/calc this number?
-    while ((hashTableSize <<= 1) <= targetHashTableSize)
-        ;
+    while (hashTableSize < targetHashTableSize)
+        hashTableSize <<= 1;
 
 #ifdef GRAPH_DIAGONAL_MOVEMENT
     const std::size_t maxSuccessorsPerNode = 8;

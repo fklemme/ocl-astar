@@ -266,7 +266,7 @@ __kernel void computeAndPushBack(__global const int2       *nodes,            //
             oldCostPred = atom_xchg(infoCostPred, *currentCostPred);
         }
 #else
-        // FIXME: Data race on duplicate nodes!
+        // FIXME: There is still a bug here, probably a data race on duplicate nodes!
         Info nodeInfo = info[current.node];
         if (nodeInfo.totalCost == 0.0f || current.totalCost < nodeInfo.totalCost) {
             nodeInfo.totalCost = current.totalCost;

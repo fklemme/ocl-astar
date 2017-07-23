@@ -31,7 +31,7 @@ static void runAStar(const compute::device &clDevice) {
     graph.generateObstacles();
 
     // Generate source/destination pairs
-    const int                          pathCount = 500; // should be big
+    const int                          pathCount = 1000; // should be big
     std::random_device                 rd;
     std::default_random_engine         generator(rd());
     std::uniform_int_distribution<int> distX(0, graph.width() - 1);
@@ -94,7 +94,7 @@ static void runAStar(const compute::device &clDevice) {
 // Run parallel GA*
 static void runGAStar(const compute::device &clDevice) {
     // Generate graph and obstacles
-    Graph graph(200, 200); // should be big
+    Graph graph(500, 500); // should be big
     graph.generateObstacles();
 
     const Position source{10, 20};
