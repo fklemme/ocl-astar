@@ -7,6 +7,9 @@
 #include <random>
 #include <vector>
 
+namespace compute = boost::compute;
+
+// Little helper for validation
 static float costs(const std::vector<Node> &path) {
     if (path.empty())
         return 0.0f;
@@ -21,13 +24,14 @@ static float costs(const std::vector<Node> &path) {
     return costs;
 }
 
-static void runAStar() {
+// Run multi-agent A*
+static void runAStar(const compute::device &clDevice) {
     // Generate graph and obstacles
     Graph graph(50, 50); // should be small
     graph.generateObstacles();
 
     // Generate source/destination pairs
-    const int                          pathCount = 500; // should be big
+    const int                          pathCount = 50; // should be big
     std::random_device                 rd;
     std::default_random_engine         generator(rd());
     std::uniform_int_distribution<int> distX(0, graph.width() - 1);
@@ -42,7 +46,7 @@ static void runAStar() {
     std::vector<std::vector<Node>> cpuPaths;
     cpuPaths.reserve(srcDstList.size());
 
-    std::cout << "CPU reference run..." << std::endl;
+    std::cout << " ----- CPU reference run..." << std::endl;
     const auto cpuStart = std::chrono::high_resolution_clock::now();
     for (const auto &srcDst : srcDstList)
         cpuPaths.emplace_back(cpuAStar(graph, srcDst.first, srcDst.second));
@@ -58,8 +62,8 @@ static void runAStar() {
 
     try {
         // GPU A* run
-        std::cout << "GPU A* run..." << std::endl;
-        const auto gpuPaths = gpuAStar(graph, srcDstList);
+        std::cout << " ----- GPU A* run..." << std::endl;
+        const auto gpuPaths = gpuAStar(graph, srcDstList, clDevice);
 
         assert(cpuPaths.size() == gpuPaths.size());
 
@@ -87,7 +91,8 @@ static void runAStar() {
     }
 }
 
-static void runGAStar() {
+// Run parallel GA*
+static void runGAStar(const compute::device &clDevice) {
     // Generate graph and obstacles
     Graph graph(100, 100); // should be big
     graph.generateObstacles();
@@ -96,7 +101,7 @@ static void runGAStar() {
     const Position destination{graph.width() - 10, graph.height() - 20};
 
     // CPU reference run
-    std::cout << "CPU reference run..." << std::endl;
+    std::cout << " ----- CPU reference run..." << std::endl;
     const auto cpuStart = std::chrono::high_resolution_clock::now();
     const auto cpuPath = cpuAStar(graph, source, destination);
     const auto cpuStop = std::chrono::high_resolution_clock::now();
@@ -111,8 +116,8 @@ static void runGAStar() {
 
     try {
         // GPU GA* run
-        std::cout << "GPU GA* run..." << std::endl;
-        const auto gpuPath = gpuGAStar(graph, source, destination);
+        std::cout << " ----- GPU GA* run..." << std::endl;
+        const auto gpuPath = gpuGAStar(graph, source, destination, clDevice);
 
         if (std::equal(cpuPath.begin(), cpuPath.end(), gpuPath.begin(), gpuPath.end())) {
             // std::cout << "GPU GA* " << i << ": Gold test passed! (exact match)" << std::endl;
@@ -134,8 +139,22 @@ static void runGAStar() {
 }
 
 int main() {
-    // runAStar();
-    runGAStar();
+    // Select default OpenCL device
+    compute::device gpu = compute::system::default_device();
+
+    // Workaround for testing on broken AMD system: Use CPU instead.
+    auto cpu = []() {
+        for (auto d : compute::system::devices())
+            if (d.type() == compute::device::cpu)
+                return d;
+        return compute::system::default_device();
+    }();
+
+    // Run multi-agent A*
+    runAStar(gpu);
+
+    // Run parallel GA*
+    runGAStar(gpu);
 
 #ifdef _WIN32
     std::cout << "\nPress ENTER to continue..." << std::flush;

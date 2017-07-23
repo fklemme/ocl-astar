@@ -1,19 +1,14 @@
+#define BOOST_COMPUTE_DEBUG_KERNEL_COMPILATION
+
 #include "astar.h"
 
 #include <algorithm>
+#include <boost/compute.hpp>
 #include <cassert>
 #include <chrono>
 #include <iostream>
 #include <stdexcept>
-
-#define BOOST_COMPUTE_DEBUG_KERNEL_COMPILATION
-
-#pragma warning(push)
-// Disable warning for VS 2017
-#pragma warning(disable : 4244) // conversion from 'boost::compute::ulong_' to '::size_t',
-                                // possible loss of data
-#include <boost/compute.hpp>
-#pragma warning(pop)
+#include <string>
 
 //#define DEBUG_LISTS
 
@@ -28,9 +23,16 @@ std::string bytes(unsigned long long bytes) {
 }
 } // namespace
 
-std::vector<Node> gpuGAStar(const Graph &graph, const Position &source,
-                            const Position &destination) {
+std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Position &destination,
+                            const boost::compute::device &clDevice) {
     namespace compute = boost::compute;
+
+    // Check 64 bit atomic capability
+    const auto        extensions = clDevice.extensions();
+    const std::string requiredExtension = "cl_khr_int64_base_atomics";
+    if (std::find(extensions.begin(), extensions.end(), requiredExtension) == extensions.end())
+        throw std::logic_error("CL device " + clDevice.name() + " does not support extension " +
+                               requiredExtension);
 
     // Just so we don't have to handle this case in the kernels...
     if (source == destination)
@@ -46,9 +48,6 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source,
 #else
     const std::size_t maxSuccessorsPerNode = 4;
 #endif
-
-    // Select default OpenCL device
-    compute::device clDevice = compute::system::default_device();
 
 #ifdef DEBUG_OUTPUT
     const auto maxMemAllocSize = clDevice.get_info<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
@@ -301,9 +300,6 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source,
     const auto downloadStart = std::chrono::high_resolution_clock::now();
     compute::copy(d_info.begin(), d_info.end(), h_info.begin(), queue);
     const auto downloadStop = std::chrono::high_resolution_clock::now();
-
-    // DEBUG
-    std::cout << (h_returnCode == 0 ? "Path found!" : "No path found!") << std::endl;
 
     std::vector<Node> path;
     if (h_returnCode == 0) {

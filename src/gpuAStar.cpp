@@ -1,21 +1,15 @@
+#define BOOST_COMPUTE_DEBUG_KERNEL_COMPILATION
+
 #include "astar.h"
 
 #include <algorithm>
+#include <boost/compute.hpp>
 #include <chrono>
 #include <cmath>
 #include <iostream>
 #include <iterator>
 #include <limits>
 #include <string>
-
-#define BOOST_COMPUTE_DEBUG_KERNEL_COMPILATION
-
-#pragma warning(push)
-// Disable warning for VS 2017
-#pragma warning(disable : 4244) // conversion from 'boost::compute::ulong_' to '::size_t',
-                                // possible loss of data
-#include <boost/compute.hpp>
-#pragma warning(pop)
 
 namespace {
 // Helper for pritty printing bytes
@@ -29,23 +23,11 @@ std::string bytes(unsigned long long bytes) {
 } // namespace
 
 std::vector<std::vector<Node>>
-gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &srcDstList) {
+gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &srcDstList,
+         const boost::compute::device &clDevice) {
     namespace compute = boost::compute;
 
     const auto numberOfAgents = srcDstList.size();
-
-#if 1
-    // Select default OpenCL device
-    compute::device clDevice = compute::system::default_device();
-#else
-    // Workaround for testing on broken AMD system: Use CPU instead.
-    auto clDevice = []() {
-        for (auto d : compute::system::devices())
-            if (d.type() == compute::device::cpu)
-                return d;
-        return compute::system::default_device();
-    }();
-#endif
 
 #ifdef DEBUG_OUTPUT
     const auto maxMemAllocSize = clDevice.get_info<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
@@ -221,11 +203,11 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
         const auto begin = std::next(h_paths.begin(), i * maxPathLength);
         const auto end = std::next(begin, pathLength);
 
+        std::transform(begin, end, std::back_inserter(paths[i]),
+                       [&](compute::int2_ node) { return Node(graph, node[0], node[1]); });
+
         // Path is in inverse order. Reverse it.
-        const auto rend = begin - 1;
-        for (auto rit = end - 1; rit != rend; --rit) {
-            paths[i].emplace_back(graph, (*rit)[0], (*rit)[1]);
-        }
+        std::reverse(paths[i].begin(), paths[i].end());
     }
 
     // Print timings

@@ -224,6 +224,10 @@ __kernel void computeAndPushBack(__global const int2       *nodes,            //
     size_t openSize = openSizes[GID]; // read open list size
 
     for (size_t i = 0; i < tlistChunkSize; ++i) {
+        // FIXME: Drop node if open list is full!
+        if (openSize == sizeOfAQueue)
+            break;
+
         const size_t gindex = i * numberOfQueues + GID;
         const size_t chunkIndex = gindex / tlistChunkSize;
         const size_t indexInChunk = gindex % tlistChunkSize;
