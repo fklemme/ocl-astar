@@ -1,7 +1,10 @@
 #include "astar.h"
 
+#include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <iostream>
+#include <stdexcept>
 
 #define BOOST_COMPUTE_DEBUG_KERNEL_COMPILATION
 
@@ -11,6 +14,8 @@
                                 // possible loss of data
 #include <boost/compute.hpp>
 #pragma warning(pop)
+
+//#define DEBUG_LISTS
 
 namespace {
 // Helper for pritty printing bytes
@@ -31,8 +36,9 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source,
     if (source == destination)
         return {{graph, destination}};
 
-    const std::size_t numberOfQueues = 64; // TODO: How to pick this number?
-    const std::size_t sizeOfAQueue = graph.size() / numberOfQueues + 1;
+    const std::size_t numberOfQueues = 16; // TODO: How to pick this number?
+    const std::size_t sizeOfAQueue =
+        (std::size_t)(1 << (int) std::ceil(std::log2((double) graph.size() / numberOfQueues)));
     assert(sizeOfAQueue <= std::numeric_limits<compute::uint_>::max());
 
 #ifdef GRAPH_DIAGONAL_MOVEMENT
@@ -104,37 +110,52 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source,
     compute::vector<compute::int2_>  d_nodes(h_nodes.size(), context);
     compute::vector<uint_float>      d_edges(h_edges.size(), context);
     compute::vector<compute::uint2_> d_adjacencyMap(h_adjacencyMap.size(), context);
-    compute::vector<compute::int2_>  d_path(maxPathLength, context);
     compute::vector<uint_float>      d_openLists(numberOfQueues * sizeOfAQueue, context);
     compute::vector<compute::uint_>  d_openSizes(numberOfQueues, context);
 
-    using Info = compute::uint4_; // wrong type, but should be a sufficient placeholder
-    static_assert(sizeof(compute::uint_) == sizeof(compute::float_), "Type size check failed!");
+    // std::tuple<...> has it's members in inverse order! :(
+    struct Info {
+        compute::uint_  closed; // only one of the first two members is used here
+        compute::uint_  node;   // the other one gives padding for memory alignment
+        compute::float_ totalCost;
+        compute::uint_  predecessor;
+    };
+    static_assert(sizeof(Info) == sizeof(compute::uint4_), "Type size check failed!");
+
     compute::vector<Info>           d_info(h_nodes.size(), context);
-    compute::vector<uint_float>     d_slistChunks(numberOfQueues * maxSuccessorsPerNode, context);
+    compute::vector<Info>           d_slistChunks(numberOfQueues * maxSuccessorsPerNode, context);
     compute::vector<compute::uint_> d_slistSizes(numberOfQueues, context);
+    compute::vector<Info>           d_tlistChunks(numberOfQueues * maxSuccessorsPerNode, context);
+    compute::vector<compute::uint_> d_tlistSizes(numberOfQueues, context);
+
+    compute::vector<compute::uint_> d_returnCode(1, context);
 
 #ifdef DEBUG_OUTPUT
     std::cout << "Global memory used:"
               << "\n - Nodes: " << bytes(h_nodes.size() * sizeof(compute::int2_))
               << "\n - Edges: " << bytes(h_edges.size() * sizeof(uint_float))
               << "\n - Adjacency map: " << bytes(h_adjacencyMap.size() * sizeof(compute::uint2_))
-              << "\n - Path: " << bytes(d_path.size() * sizeof(compute::int2_))
               << "\n - Open lists: " << bytes(d_openLists.size() * sizeof(uint_float))
               << "\n - Open list sizes: " << bytes(d_openSizes.size() * sizeof(compute::uint_))
               << "\n - Info table: " << bytes(d_info.size() * sizeof(Info))
-              << "\n - \"S\"-list chunks: " << bytes(d_slistChunks.size() * sizeof(uint_float))
+              << "\n - \"S\"-list chunks: " << bytes(d_slistChunks.size() * sizeof(Info))
               << "\n - \"S\"-list sizes: " << bytes(d_slistSizes.size() * sizeof(compute::uint_))
+              << "\n - \"T\"-list chunks: " << bytes(d_tlistChunks.size() * sizeof(Info))
+              << "\n - \"T\"-list sizes: " << bytes(d_tlistSizes.size() * sizeof(compute::uint_))
               << std::endl;
 #endif
 
     // Create kernels
+    compute::kernel clearSList(program, "clearList");
     compute::kernel extractAndExpand(program, "extractAndExpand");
-    compute::kernel checkAndFinalize(program, "checkAndFinalize");
+    compute::kernel clearTList(program, "clearList");
     compute::kernel duplicateDetection(program, "duplicateDetection");
     compute::kernel computeAndPushBack(program, "computeAndPushBack");
 
     // Set kernel arguments
+    clearSList.set_arg(0, d_slistSizes);
+    clearSList.set_arg<compute::ulong_>(1, d_slistSizes.size());
+
     extractAndExpand.set_arg(0, d_edges);
     extractAndExpand.set_arg<compute::ulong_>(1, d_edges.size());
     extractAndExpand.set_arg(2, d_adjacencyMap);
@@ -148,13 +169,40 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source,
     extractAndExpand.set_arg(10, d_slistChunks);
     extractAndExpand.set_arg(11, d_slistSizes);
     extractAndExpand.set_arg<compute::ulong_>(12, maxSuccessorsPerNode);
+    extractAndExpand.set_arg(13, d_returnCode);
+
+    clearTList.set_arg(0, d_tlistSizes);
+    clearTList.set_arg<compute::ulong_>(1, d_tlistSizes.size());
+
+    duplicateDetection.set_arg<compute::ulong_>(0, numberOfQueues);
+    duplicateDetection.set_arg(1, d_info);
+    duplicateDetection.set_arg(2, d_slistChunks);
+    duplicateDetection.set_arg(3, d_slistSizes);
+    duplicateDetection.set_arg<compute::ulong_>(4, maxSuccessorsPerNode);
+    duplicateDetection.set_arg(5, d_tlistChunks);
+    duplicateDetection.set_arg(6, d_tlistSizes);
+
+    computeAndPushBack.set_arg(0, d_nodes);
+    computeAndPushBack.set_arg<compute::ulong_>(1, d_nodes.size());
+    computeAndPushBack.set_arg<compute::ulong_>(2, numberOfQueues);
+    computeAndPushBack.set_arg<compute::ulong_>(3, sizeOfAQueue);
+    computeAndPushBack.set_arg<compute::uint_>(4, index(destination.x, destination.y));
+    computeAndPushBack.set_arg(5, d_openLists);
+    computeAndPushBack.set_arg(6, d_openSizes);
+    computeAndPushBack.set_arg(7, d_info);
+    computeAndPushBack.set_arg(8, d_tlistChunks);
+    computeAndPushBack.set_arg(9, d_tlistSizes);
+    computeAndPushBack.set_arg<compute::ulong_>(10, maxSuccessorsPerNode);
 
     // Data initialization
     std::vector<uint_float>     h_openLists(1, std::make_pair(index(source.x, source.y), 0.0f));
     std::vector<compute::uint_> h_openSizes(d_openSizes.size(), 0);
-    h_openSizes.front() = 1; // the first list contains one node: source
-    std::vector<Info>           h_info(d_info.size(), {0, 0, 0, 0});
-    std::vector<compute::uint_> h_slistSizes(d_slistSizes.size(), 0);
+    h_openSizes.front() = 1; // only the first list contains one node: source
+
+    std::vector<Info> h_info(d_info.size(), {0, 0, 0.0f, 0});
+    const auto        sourceIndex = index(source.x, source.y);
+    h_info[sourceIndex].closed = 1;                // close source node
+    h_info[sourceIndex].predecessor = sourceIndex; // source is it's own predecessor
 
     // Upload data
     const auto uploadStart = std::chrono::high_resolution_clock::now();
@@ -164,32 +212,120 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source,
     compute::copy(h_openLists.begin(), h_openLists.end(), d_openLists.begin(), queue); // source
     compute::copy(h_openSizes.begin(), h_openSizes.end(), d_openSizes.begin(), queue);
     compute::copy(h_info.begin(), h_info.end(), d_info.begin(), queue);
-    compute::copy(h_slistSizes.begin(), h_slistSizes.end(), d_slistSizes.begin(), queue);
     const auto uploadStop = std::chrono::high_resolution_clock::now();
 
     // TODO: Figure these out!
-    const std::size_t globalWorkSize = numberOfQueues;
-    const std::size_t localWorkSize = numberOfQueues;
+    const std::size_t globalWorkSize[2] = {numberOfQueues, maxSuccessorsPerNode};
+    const std::size_t localWorkSize[2] = {numberOfQueues / maxSuccessorsPerNode,
+                                          maxSuccessorsPerNode};
 
     // Run kernels
-    const auto kernelsStart = std::chrono::high_resolution_clock::now();
-    while (true) {
-        queue.enqueue_1d_range_kernel(extractAndExpand, 0, globalWorkSize, localWorkSize);
-        queue.enqueue_1d_range_kernel(checkAndFinalize, 0, globalWorkSize, localWorkSize);
+    const auto     kernelsStart = std::chrono::high_resolution_clock::now();
+    compute::uint_ h_returnCode = 1; // still running
+    while (h_returnCode == 1) {
+        h_returnCode = 2; // no path found, as initial value
+        compute::copy(&h_returnCode, std::next(&h_returnCode), d_returnCode.begin(), queue);
+        queue.enqueue_1d_range_kernel(clearSList, 0, globalWorkSize[0], localWorkSize[0]);
+        queue.enqueue_1d_range_kernel(extractAndExpand, 0, globalWorkSize[0], localWorkSize[0]);
+        compute::copy(d_returnCode.begin(), d_returnCode.end(), &h_returnCode, queue);
+
+#ifdef DEBUG_LISTS
+        std::vector<Info>           h_slistChunks(d_slistChunks.size());
+        std::vector<compute::uint_> h_slistSizes(d_slistSizes.size());
+        compute::copy(d_slistChunks.begin(), d_slistChunks.end(), h_slistChunks.begin(), queue);
+        compute::copy(d_slistSizes.begin(), d_slistSizes.end(), h_slistSizes.begin(), queue);
         queue.finish();
-        // TODO: download info and break
-        break;
-        queue.enqueue_1d_range_kernel(duplicateDetection, 0, globalWorkSize, localWorkSize);
-        queue.enqueue_1d_range_kernel(computeAndPushBack, 0, globalWorkSize, localWorkSize);
+
+        for (std::size_t i = 0; i < h_slistSizes.size(); ++i) {
+            const auto begin = h_slistChunks.begin() + i * maxSuccessorsPerNode;
+            const auto end = begin + h_slistSizes[i];
+            std::cout << "S-chunk " << i << ":";
+            for (auto it = begin; it != end; ++it)
+                std::cout << " (" << it->node << ", " << it->totalCost << ", " << it->predecessor
+                          << ")";
+            std::cout << "\n";
+        }
+#endif
+
+        queue.enqueue_1d_range_kernel(clearTList, 0, globalWorkSize[0], localWorkSize[0]);
+        queue.enqueue_nd_range_kernel(duplicateDetection, 2, 0, globalWorkSize, localWorkSize);
+
+#ifdef DEBUG_LISTS
+        std::vector<Info>           h_tlistChunks(d_slistChunks.size());
+        std::vector<compute::uint_> h_tlistSizes(d_slistSizes.size());
+        compute::copy(d_tlistChunks.begin(), d_tlistChunks.end(), h_tlistChunks.begin(), queue);
+        compute::copy(d_tlistSizes.begin(), d_tlistSizes.end(), h_tlistSizes.begin(), queue);
+        queue.finish();
+
+        for (std::size_t i = 0; i < h_tlistSizes.size(); ++i) {
+            const auto begin = h_tlistChunks.begin() + i * maxSuccessorsPerNode;
+            const auto end = begin + h_tlistSizes[i];
+            std::cout << "T-chunk " << i << ":";
+            for (auto it = begin; it != end; ++it)
+                std::cout << " (" << it->node << ", " << it->totalCost << ", " << it->predecessor
+                          << ")";
+            std::cout << "\n";
+        }
+#endif
+
+        queue.enqueue_1d_range_kernel(computeAndPushBack, 0, globalWorkSize[0], localWorkSize[0]);
+
+#ifdef DEBUG_LISTS
+        std::vector<uint_float>     h_openLists(d_openLists.size());
+        std::vector<compute::uint_> h_openSizes(d_openSizes.size());
+        compute::copy(d_openLists.begin(), d_openLists.end(), h_openLists.begin(), queue);
+        compute::copy(d_openSizes.begin(), d_openSizes.end(), h_openSizes.begin(), queue);
+        queue.finish();
+
+        for (std::size_t i = 0; i < h_openSizes.size(); ++i) {
+            const auto begin = h_openLists.begin() + i * sizeOfAQueue;
+            const auto end = begin + h_openSizes[i];
+            std::cout << "Open list " << i << ":";
+            for (auto it = begin; it != end; ++it)
+                std::cout << " (" << it->first << ", " << it->second << ")";
+            std::cout << "\n";
+        }
+
+        // DEBUG: Detect queue overflow
+        if (std::any_of(h_openSizes.begin(), h_openSizes.end(),
+                        [&](compute::uint_ size) { return size >= sizeOfAQueue; }))
+            throw std::overflow_error("Open list overflow!");
+#endif
+
+        queue.finish(); // make sure we have the returnCode downloaded
+        // std::cout << "Return code: " << h_returnCode << std::endl;
     }
     const auto kernelsStop = std::chrono::high_resolution_clock::now();
 
     // Download data
-    std::vector<compute::int2_> h_path(d_path.size());
-
     const auto downloadStart = std::chrono::high_resolution_clock::now();
-    compute::copy(d_path.begin(), d_path.end(), h_path.begin(), queue);
+    compute::copy(d_info.begin(), d_info.end(), h_info.begin(), queue);
     const auto downloadStop = std::chrono::high_resolution_clock::now();
+
+    // DEBUG
+    std::cout << (h_returnCode == 0 ? "Path found!" : "No path found!") << std::endl;
+
+    std::vector<Node> path;
+    if (h_returnCode == 0) {
+        // Recreate path
+        compute::uint_ nodeIndex = index(destination.x, destination.y);
+        compute::uint_ predecessor = h_info[nodeIndex].predecessor;
+
+        while (nodeIndex != predecessor) {
+            const auto node = h_nodes[nodeIndex];
+            path.emplace_back(graph, node[0], node[1]);
+
+            nodeIndex = predecessor;
+            predecessor = h_info[nodeIndex].predecessor;
+        }
+        const auto node = h_nodes[nodeIndex];
+        path.emplace_back(graph, node[0], node[1]);
+
+        // Path is in inverse order. Reverse it.
+        std::reverse(path.begin(), path.end());
+        assert(path.front().position() == source);
+        assert(path.back().position() == destination);
+    }
 
     // Print timings
     std::cout << "GPU time for graph (" << graph.width() << ", " << graph.height() << "):"
@@ -201,5 +337,5 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source,
               << std::chrono::duration<double>(downloadStop - downloadStart).count() << " seconds"
               << std::endl;
 
-    return {}; // TODO
+    return path;
 }
