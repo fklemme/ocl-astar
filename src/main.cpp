@@ -94,7 +94,7 @@ static void runAStar(const compute::device &clDevice) {
 // Run parallel GA*
 static void runGAStar(const compute::device &clDevice) {
     // Generate graph and obstacles
-    Graph graph(500, 500); // should be big
+    Graph graph(250, 250); // should be big
     graph.generateObstacles();
 
     const Position source{10, 20};
