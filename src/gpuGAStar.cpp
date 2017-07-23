@@ -27,18 +27,11 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
                             const boost::compute::device &clDevice) {
     namespace compute = boost::compute;
 
-    // Check 64 bit atomic capability
-    const auto        extensions = clDevice.extensions();
-    const std::string requiredExtension = "cl_khr_int64_base_atomics";
-    if (std::find(extensions.begin(), extensions.end(), requiredExtension) == extensions.end())
-        throw std::logic_error("CL device " + clDevice.name() + " does not support extension " +
-                               requiredExtension);
-
     // Just so we don't have to handle this case in the kernels...
     if (source == destination)
         return {{graph, destination}};
 
-    const std::size_t numberOfQueues = 16; // TODO: How to pick this number?
+    const std::size_t numberOfQueues = 64; // TODO: How to pick this number?
     const std::size_t sizeOfAQueue =
         (std::size_t)(1 << (int) std::ceil(std::log2((double) graph.size() / numberOfQueues)));
     assert(sizeOfAQueue <= std::numeric_limits<compute::uint_>::max());
@@ -78,7 +71,7 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
     program.build();
 
     // Set up data structures on host
-    // Let's just use similar strucutures to the other GPU A* implementation.
+    // Let's use similar strucutures to the other GPU A* implementation.
     using uint_float = std::pair<compute::uint_, compute::float_>;
     std::vector<compute::int2_>  h_nodes;        // x, y
     std::vector<uint_float>      h_edges;        // destination index, cost
@@ -329,13 +322,12 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
         compute::copy(d_openSizes.begin(), d_openSizes.end(), h_openSizes.begin(), queue);
         queue.finish();
 #endif
-        // DEBUG: Detect queue overflows
+        // DEBUG: Detect queue overflows. TODO: Remove for maximum performance.
         if (std::any_of(h_openSizes.begin(), h_openSizes.end(),
                         [&](compute::uint_ size) { return size >= sizeOfAQueue; }))
             throw std::overflow_error("Open list overflow!");
 
         queue.finish(); // make sure we have the returnCode downloaded
-        // std::cout << h_returnCode << ' ';
     }
     const auto kernelsStop = std::chrono::high_resolution_clock::now();
 

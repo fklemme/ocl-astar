@@ -1,7 +1,5 @@
 // GPU GA* program
 
-#pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable
-
 #define SQRT2 1.41421356237f
 
 // ----- Types ----------------------------------------------------------------
@@ -31,7 +29,7 @@ uint top(__global uint_float *open) {
     return open[0].first;
 }
 
-void _push_impl(__global uint_float *open, size_t *size, uint value, float cost) {
+void push(__global uint_float *open, size_t *size, uint value, float cost) {
     size_t index = (*size)++;
 
     while (index > 0) {
@@ -46,14 +44,6 @@ void _push_impl(__global uint_float *open, size_t *size, uint value, float cost)
     }
 
     _write_heap(open, index, (uint_float){value, cost});
-}
-
-void push(__global uint_float *open, size_t *size, uint value, float cost) {
-    _push_impl(open, size, value, cost);
-}
-
-void update(__global uint_float *open, size_t index, uint value, float cost) {
-    _push_impl(open, &index, value, cost);
 }
 
 void pop(__global uint_float *open, size_t *size) {
@@ -81,16 +71,6 @@ void pop(__global uint_float *open, size_t *size) {
     }
 
     _write_heap(open, index, value);
-}
-
-uint find(__global uint_float *open, size_t *size, uint value) {
-    for (uint index = 0; index < *size; ++index) {
-        uint_float iValue = _read_heap(open, index);
-        if (iValue.first == value)
-            return index;
-    }
-
-    return *size;
 }
 
 // ----- Kernels --------------------------------------------------------------
@@ -188,14 +168,14 @@ __kernel void duplicateDetection(         const ulong       numberOfQueues,   //
     if (nodeInfo.closed == 1 && nodeInfo.totalCost < current.totalCost)
         return; // better candidate already in open list
 
-    // Dedublication with hashing and stuff...
-    const uint hash = current.node % hashTableSize; // TODO: +/- 1 ?
+    // Dedublication with hashing
+    const uint hash = current.node % hashTableSize; // TODO: size +/- 1 for better collisions ?
     const uint old = atomic_xchg(hashTable + hash, current.node);
 
     if (old == current.node)
         return; // node has already been added
 
-    // TODO: There is some searching in the script. Should we do that? I don't see the point...
+    // TODO: There is some searching in the script. Should we add that? I don't see the point...
 
     __global Info *tlist = tlistChunks + GID.x * slistChunkSize;
     const uint index = atomic_inc(tlistSizes + GID.x);
@@ -268,9 +248,12 @@ __kernel void computeAndPushBack(__global const int2       *nodes,            //
 
         const Info current = tlistCompacted[i];
 
+#if 0
+        // Replaced: This idea doesn't seem to work for some reason...
+
         // In this algorithm, "closed" means already added to open list.
         info[current.node].closed = 1; // close node
-
+        
         // Update totalCost and predecessor as one 64 bit transaction.
         ulong *currentCostPred = (ulong *) &current.totalCost;
         __global ulong *infoCostPred = (__global ulong *) &info[current.node].totalCost;
@@ -282,6 +265,19 @@ __kernel void computeAndPushBack(__global const int2       *nodes,            //
             // The old entry was better. Swap back!
             oldCostPred = atom_xchg(infoCostPred, *currentCostPred);
         }
+#else
+        // FIXME: Data race on duplicate nodes!
+        Info nodeInfo = info[current.node];
+        if (nodeInfo.totalCost == 0.0f || current.totalCost < nodeInfo.totalCost) {
+            nodeInfo.totalCost = current.totalCost;
+            nodeInfo.predecessor = current.predecessor;
+        }
+
+        // In this algorithm, "closed" means already added to open list.
+        nodeInfo.closed = 1; // close node
+
+        info[current.node] = nodeInfo; // write back
+#endif
 
         float h = heuristic(nodes[current.node], destNode);
         push(openList, &openSize, current.node, current.totalCost + h);
