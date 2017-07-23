@@ -42,6 +42,10 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
     const std::size_t sizeOfAQueue =
         (std::size_t)(1 << (int) std::ceil(std::log2((double) graph.size() / numberOfQueues)));
     assert(sizeOfAQueue <= std::numeric_limits<compute::uint_>::max());
+    std::size_t targetHashTableSize = 1 << 10;         // Just a guess, TODO!
+    std::size_t hashTableSize = graph.width() / 3 - 1; // TODO: How to pick/calc this number?
+    while ((hashTableSize <<= 1) <= targetHashTableSize)
+        ;
 
 #ifdef GRAPH_DIAGONAL_MOVEMENT
     const std::size_t maxSuccessorsPerNode = 8;
@@ -105,7 +109,6 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
     }
 
     // Device memory
-    const std::size_t maxPathLength = 2 * (graph.width() + graph.height()); // TODO: correct size
     compute::vector<compute::int2_>  d_nodes(h_nodes.size(), context);
     compute::vector<uint_float>      d_edges(h_edges.size(), context);
     compute::vector<compute::uint2_> d_adjacencyMap(h_adjacencyMap.size(), context);
@@ -126,6 +129,11 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
     compute::vector<compute::uint_> d_slistSizes(numberOfQueues, context);
     compute::vector<Info>           d_tlistChunks(numberOfQueues * maxSuccessorsPerNode, context);
     compute::vector<compute::uint_> d_tlistSizes(numberOfQueues, context);
+    compute::vector<compute::uint_> d_hashTable(hashTableSize, context);
+
+    compute::vector<compute::uint_> d_exclusiveSums(d_tlistSizes.size(), context);
+    compute::vector<Info>           d_tlistCompacted(d_tlistChunks.size(), context);
+    compute::vector<compute::uint_> d_tlistCompactedSize(1, context);
 
     compute::vector<compute::uint_> d_returnCode(1, context);
 
@@ -141,6 +149,9 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
               << "\n - \"S\"-list sizes: " << bytes(d_slistSizes.size() * sizeof(compute::uint_))
               << "\n - \"T\"-list chunks: " << bytes(d_tlistChunks.size() * sizeof(Info))
               << "\n - \"T\"-list sizes: " << bytes(d_tlistSizes.size() * sizeof(compute::uint_))
+              << "\n - Hash table size: " << bytes(d_hashTable.size() * sizeof(compute::uint_))
+              << "\n - Exclusive sums: " << bytes(d_exclusiveSums.size() * sizeof(compute::uint_))
+              << "\n - \"T\"-list compacted: " << bytes(d_tlistCompacted.size() * sizeof(Info))
               << std::endl;
 #endif
 
@@ -149,6 +160,7 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
     compute::kernel extractAndExpand(program, "extractAndExpand");
     compute::kernel clearTList(program, "clearList");
     compute::kernel duplicateDetection(program, "duplicateDetection");
+    compute::kernel compactTList(program, "compactTList");
     compute::kernel computeAndPushBack(program, "computeAndPushBack");
 
     // Set kernel arguments
@@ -180,6 +192,16 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
     duplicateDetection.set_arg<compute::ulong_>(4, maxSuccessorsPerNode);
     duplicateDetection.set_arg(5, d_tlistChunks);
     duplicateDetection.set_arg(6, d_tlistSizes);
+    duplicateDetection.set_arg(7, d_hashTable);
+    duplicateDetection.set_arg<compute::ulong_>(8, d_hashTable.size());
+
+    compactTList.set_arg<compute::ulong_>(0, numberOfQueues);
+    compactTList.set_arg(1, d_tlistChunks);
+    compactTList.set_arg(2, d_tlistSizes);
+    compactTList.set_arg<compute::ulong_>(3, maxSuccessorsPerNode);
+    compactTList.set_arg(4, d_exclusiveSums);
+    compactTList.set_arg(5, d_tlistCompacted);
+    compactTList.set_arg(6, d_tlistCompactedSize);
 
     computeAndPushBack.set_arg(0, d_nodes);
     computeAndPushBack.set_arg<compute::ulong_>(1, d_nodes.size());
@@ -189,9 +211,8 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
     computeAndPushBack.set_arg(5, d_openLists);
     computeAndPushBack.set_arg(6, d_openSizes);
     computeAndPushBack.set_arg(7, d_info);
-    computeAndPushBack.set_arg(8, d_tlistChunks);
-    computeAndPushBack.set_arg(9, d_tlistSizes);
-    computeAndPushBack.set_arg<compute::ulong_>(10, maxSuccessorsPerNode);
+    computeAndPushBack.set_arg(8, d_tlistCompacted);
+    computeAndPushBack.set_arg(9, d_tlistCompactedSize);
 
     // Data initialization
     std::vector<uint_float>     h_openLists(1, std::make_pair(index(source.x, source.y), 0.0f));
@@ -267,6 +288,25 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
         }
 #endif
 
+        compute::exclusive_scan(d_tlistSizes.begin(), d_tlistSizes.end(), d_exclusiveSums.begin(),
+                                queue);
+        queue.enqueue_nd_range_kernel(compactTList, 2, 0, globalWorkSize, localWorkSize);
+
+#ifdef DEBUG_LISTS
+        std::vector<Info> h_comp(d_tlistCompacted.size());
+        compute::uint_    h_compSize = 0;
+        compute::copy(d_tlistCompacted.begin(), d_tlistCompacted.end(), h_comp.begin(), queue);
+        compute::copy(d_tlistCompactedSize.begin(), d_tlistCompactedSize.end(), &h_compSize, queue);
+        queue.finish();
+
+        assert(h_compSize == std::accumulate(h_tlistSizes.begin(), h_tlistSizes.end(), 0));
+        std::cout << "T-list compacted:";
+        for (std::size_t i = 0; i < h_compSize; ++i)
+            std::cout << " (" << h_comp[i].node << ", " << h_comp[i].totalCost << ", "
+                      << h_comp[i].predecessor << ")";
+        std::cout << "\n";
+#endif
+
         queue.enqueue_1d_range_kernel(computeAndPushBack, 0, globalWorkSize[0], localWorkSize[0]);
 
 #ifdef DEBUG_LISTS
@@ -284,15 +324,18 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
                 std::cout << " (" << it->first << ", " << it->second << ")";
             std::cout << "\n";
         }
-
-        // DEBUG: Detect queue overflow
+#else
+        std::vector<compute::uint_> h_openSizes(d_openSizes.size());
+        compute::copy(d_openSizes.begin(), d_openSizes.end(), h_openSizes.begin(), queue);
+        queue.finish();
+#endif
+        // DEBUG: Detect queue overflows
         if (std::any_of(h_openSizes.begin(), h_openSizes.end(),
                         [&](compute::uint_ size) { return size >= sizeOfAQueue; }))
             throw std::overflow_error("Open list overflow!");
-#endif
 
         queue.finish(); // make sure we have the returnCode downloaded
-        // std::cout << "Return code: " << h_returnCode << std::endl;
+        // std::cout << h_returnCode << ' ';
     }
     const auto kernelsStop = std::chrono::high_resolution_clock::now();
 

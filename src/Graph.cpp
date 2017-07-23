@@ -43,7 +43,7 @@ void Graph::generateObstacles(int amount) {
 
 void Graph::toPfm(const std::string &filePath, const std::vector<Node> &path) const {
     // http://netpbm.sourceforge.net/doc/pfm.html
-    std::ofstream out(filePath, std::ios::trunc);
+    std::ofstream out(filePath, std::ios::binary | std::ios::trunc);
     out << "PF\n";                             // Identifier Line
     out << m_width << ' ' << m_height << '\n'; // Dimensions Line
     out << std::fixed << -1.0f << '\n';        // Scale Factor / Endianness

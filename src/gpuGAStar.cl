@@ -165,7 +165,9 @@ __kernel void duplicateDetection(         const ulong       numberOfQueues,   //
                                  __global       uint       *slistSizes,
                                           const ulong       slistChunkSize,   // equals "tlistChunkSize" as well
                                  __global       Info       *tlistChunks,      // "T" list, divided into chunks
-                                 __global       uint       *tlistSizes)
+                                 __global       uint       *tlistSizes,
+                                 __global       uint       *hashTable,
+                                          const ulong       hashTableSize)
 {
     // Parallel for each element in S-list (two dimensional)
     const uint2 GID = {get_global_id(0), get_global_id(1)};
@@ -186,11 +188,46 @@ __kernel void duplicateDetection(         const ulong       numberOfQueues,   //
     if (nodeInfo.closed == 1 && nodeInfo.totalCost < current.totalCost)
         return; // better candidate already in open list
 
-    // TODO: Dedublication with hashing and stuff...
+    // Dedublication with hashing and stuff...
+    const uint hash = current.node % hashTableSize; // TODO: +/- 1 ?
+    const uint old = atomic_xchg(hashTable + hash, current.node);
+
+    if (old == current.node)
+        return; // node has already been added
+
+    // TODO: There is some searching in the script. Should we do that? I don't see the point...
 
     __global Info *tlist = tlistChunks + GID.x * slistChunkSize;
     const uint index = atomic_inc(tlistSizes + GID.x);
     tlist[index] = current;
+}
+
+__kernel void compactTList(         const ulong       numberOfQueues,   // provides offset ...
+                           __global       Info       *tlistChunks,      // "T" list, divided into chunks
+                           __global       uint       *tlistSizes,
+                                    const ulong       tlistChunkSize,
+                           __global       uint       *exclusiveSums,
+                           __global       Info       *tlistCompacted,
+                           __global       uint       *tlistCompactedSize)
+{
+    // Parallel for each element in T-list (two dimensional)
+    const uint2 GID = {get_global_id(0), get_global_id(1)};
+
+    if (GID.x >= numberOfQueues || GID.y >= tlistChunkSize)
+        return;
+
+    __global Info *tlist = tlistChunks + GID.x * tlistChunkSize;
+    const uint tlistSize = tlistSizes[GID.x];
+    const uint index = exclusiveSums[GID.x];
+
+    // Store size
+    if (GID.x == numberOfQueues - 1 && GID.y == 0)
+        *tlistCompactedSize = index + tlistSize;
+
+    if (GID.y >= tlistSize)
+        return;
+
+    tlistCompacted[index + GID.y] = tlist[GID.y];
 }
 
 // http://theory.stanford.edu/~amitp/GameProgramming/Heuristics.html#diagonal-distance
@@ -208,9 +245,8 @@ __kernel void computeAndPushBack(__global const int2       *nodes,            //
                                  __global       uint_float *openLists,        // aka "Q" priority queues
                                  __global       uint       *openSizes,
                                  __global       Info       *info,             // closed list, see members at the top
-                                 __global       Info       *tlistChunks,      // "T" list, divided into chunks
-                                 __global       uint       *tlistSizes,
-                                          const ulong       tlistChunkSize)
+                                 __global       Info       *tlistCompacted,   // "T" list, compacted!
+                                 __global       uint       *tlistCompactedSize)
 {
     // Parallel for each queue (one dimensional)
     const size_t GID = get_global_id(0);
@@ -223,21 +259,14 @@ __kernel void computeAndPushBack(__global const int2       *nodes,            //
     __global uint_float *openList = openLists + GID * sizeOfAQueue;
     size_t openSize = openSizes[GID]; // read open list size
 
-    for (size_t i = 0; i < tlistChunkSize; ++i) {
+    const size_t tlistSize = *tlistCompactedSize;
+    for (size_t i = GID; i < tlistSize; i += numberOfQueues) {
         // FIXME: Drop node if open list is full!
+        // --> Should be fixed with using compacted tlist!
         if (openSize == sizeOfAQueue)
             break;
 
-        const size_t gindex = i * numberOfQueues + GID;
-        const size_t chunkIndex = gindex / tlistChunkSize;
-        const size_t indexInChunk = gindex % tlistChunkSize;
-
-        const uint chunkSize = tlistSizes[chunkIndex];
-
-        if (indexInChunk >= chunkSize)
-            continue;
-
-        const Info current = tlistChunks[gindex];
+        const Info current = tlistCompacted[i];
 
         // In this algorithm, "closed" means already added to open list.
         info[current.node].closed = 1; // close node
