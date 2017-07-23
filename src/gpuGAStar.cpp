@@ -32,9 +32,9 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
         return {{graph, destination}};
 
     const std::size_t numberOfQueues =
-        clDevice.max_work_group_size(); // TODO: How to pick this number?
+        clDevice.max_work_group_size(); // TODO: How to pick these numbers?
     const std::size_t sizeOfAQueue =
-        (std::size_t)(4 << (int) std::ceil(std::log2((double) graph.size() / numberOfQueues)));
+        (std::size_t)(16 << (int) std::ceil(std::log2((double) graph.size() / numberOfQueues)));
     assert(sizeOfAQueue <= std::numeric_limits<compute::uint_>::max());
     std::size_t targetHashTableSize = 1 << 10;         // Just a guess, TODO!
     std::size_t hashTableSize = graph.width() / 3 - 1; // TODO: How to pick/calc this number?
