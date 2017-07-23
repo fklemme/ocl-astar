@@ -221,9 +221,10 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
         const auto begin = std::next(h_paths.begin(), i * maxPathLength);
         const auto end = std::next(begin, pathLength);
 
-        for (auto it = begin; it != end; ++it) {
-            const Position position{(int) (*it)[0], (int) (*it)[1]};
-            paths[i].emplace_back(graph, position);
+        // Path is in inverse order. Reverse it.
+        const auto rend = begin - 1;
+        for (auto rit = end - 1; rit != rend; --rit) {
+            paths[i].emplace_back(graph, (*rit)[0], (*rit)[1]);
         }
     }
 

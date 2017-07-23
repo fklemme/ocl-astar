@@ -11,9 +11,9 @@ static float costs(const std::vector<Node> &path) {
     if (path.empty())
         return 0.0f;
 
-    const auto &graph = path.front().graph();
-    auto        node = path.begin();
-    float       costs = 0.0f;
+    auto &graph = path.front().graph();
+    auto  node = path.begin();
+    float costs = 0.0f;
 
     for (auto pred = node++; node != path.end(); pred = node++)
         costs += graph.pathCost(*pred, *node);
@@ -89,7 +89,7 @@ static void runAStar() {
 
 static void runGAStar() {
     // Generate graph and obstacles
-    Graph graph(50, 50); // should be big
+    Graph graph(100, 100); // should be big
     graph.generateObstacles();
 
     const Position source{10, 20};

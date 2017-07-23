@@ -8,7 +8,7 @@ Node::Node(const Graph &graph, int x, int y) : m_graph(&graph), m_position{x, y}
 std::vector<std::pair<Node, float>> Node::neighbors() const {
     std::vector<std::pair<Node, float>> neighbors;
 
-#ifndef DIAGONAL
+#ifndef GRAPH_DIAGONAL_MOVEMENT
     neighbors.reserve(4);
 
     // clockwise

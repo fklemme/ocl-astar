@@ -87,7 +87,7 @@ float Graph::pathCost(const Node &source, const Node &destination) const {
     const auto &dst = destination.position();
 
 // This function is only legal for neighbors!
-#ifndef DIAGONAL
+#ifndef GRAPH_DIAGONAL_MOVEMENT
     // Orthogonal only
     assert((std::abs(src.x - dst.x) == 1 && src.y == dst.y) ||
            (std::abs(src.y - dst.y) == 1 && src.x == dst.x));

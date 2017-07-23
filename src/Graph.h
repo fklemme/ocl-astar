@@ -1,6 +1,6 @@
 #pragma once
 
-#define DIAGONAL
+#define GRAPH_DIAGONAL_MOVEMENT
 
 #include <string>
 #include <vector>

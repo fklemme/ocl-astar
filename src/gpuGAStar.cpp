@@ -35,6 +35,12 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source,
     const std::size_t sizeOfAQueue = graph.size() / numberOfQueues + 1;
     assert(sizeOfAQueue <= std::numeric_limits<compute::uint_>::max());
 
+#ifdef GRAPH_DIAGONAL_MOVEMENT
+    const std::size_t maxSuccessorsPerNode = 8;
+#else
+    const std::size_t maxSuccessorsPerNode = 4;
+#endif
+
     // Select default OpenCL device
     compute::device clDevice = compute::system::default_device();
 
@@ -101,7 +107,12 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source,
     compute::vector<compute::int2_>  d_path(maxPathLength, context);
     compute::vector<uint_float>      d_openLists(numberOfQueues * sizeOfAQueue, context);
     compute::vector<compute::uint_>  d_openSizes(numberOfQueues, context);
-    compute::vector<compute::char_>  d_closed(h_nodes.size(), context);
+
+    using Info = compute::uint4_; // wrong type, but should be a sufficient placeholder
+    static_assert(sizeof(compute::uint_) == sizeof(compute::float_), "Type size check failed!");
+    compute::vector<Info>           d_info(h_nodes.size(), context);
+    compute::vector<uint_float>     d_slistChunks(numberOfQueues * maxSuccessorsPerNode, context);
+    compute::vector<compute::uint_> d_slistSizes(numberOfQueues, context);
 
 #ifdef DEBUG_OUTPUT
     std::cout << "Global memory used:"
@@ -111,9 +122,12 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source,
               << "\n - Path: " << bytes(d_path.size() * sizeof(compute::int2_))
               << "\n - Open lists: " << bytes(d_openLists.size() * sizeof(uint_float))
               << "\n - Open list sizes: " << bytes(d_openSizes.size() * sizeof(compute::uint_))
-              << "\n - Closed list: " << bytes(d_closed.size() * sizeof(compute::char_))
+              << "\n - Info table: " << bytes(d_info.size() * sizeof(Info))
+              << "\n - \"S\"-list chunks: " << bytes(d_slistChunks.size() * sizeof(uint_float))
+              << "\n - \"S\"-list sizes: " << bytes(d_slistSizes.size() * sizeof(compute::uint_))
               << std::endl;
 #endif
+
     // Create kernels
     compute::kernel extractAndExpand(program, "extractAndExpand");
     compute::kernel checkAndFinalize(program, "checkAndFinalize");
@@ -121,16 +135,26 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source,
     compute::kernel computeAndPushBack(program, "computeAndPushBack");
 
     // Set kernel arguments
-    extractAndExpand.set_arg<compute::ulong_>(0, numberOfQueues);
-    extractAndExpand.set_arg<compute::ulong_>(1, sizeOfAQueue);
-    extractAndExpand.set_arg(2, d_openLists);
-    extractAndExpand.set_arg(3, d_openSizes);
+    extractAndExpand.set_arg(0, d_edges);
+    extractAndExpand.set_arg<compute::ulong_>(1, d_edges.size());
+    extractAndExpand.set_arg(2, d_adjacencyMap);
+    extractAndExpand.set_arg<compute::ulong_>(3, d_adjacencyMap.size());
+    extractAndExpand.set_arg<compute::ulong_>(4, numberOfQueues);
+    extractAndExpand.set_arg<compute::ulong_>(5, sizeOfAQueue);
+    extractAndExpand.set_arg<compute::uint_>(6, index(destination.x, destination.y));
+    extractAndExpand.set_arg(7, d_openLists);
+    extractAndExpand.set_arg(8, d_openSizes);
+    extractAndExpand.set_arg(9, d_info);
+    extractAndExpand.set_arg(10, d_slistChunks);
+    extractAndExpand.set_arg(11, d_slistSizes);
+    extractAndExpand.set_arg<compute::ulong_>(12, maxSuccessorsPerNode);
 
     // Data initialization
     std::vector<uint_float>     h_openLists(1, std::make_pair(index(source.x, source.y), 0.0f));
     std::vector<compute::uint_> h_openSizes(d_openSizes.size(), 0);
     h_openSizes.front() = 1; // the first list contains one node: source
-    std::vector<compute::char_> h_closed(d_closed.size(), 0);
+    std::vector<Info>           h_info(d_info.size(), {0, 0, 0, 0});
+    std::vector<compute::uint_> h_slistSizes(d_slistSizes.size(), 0);
 
     // Upload data
     const auto uploadStart = std::chrono::high_resolution_clock::now();
@@ -139,7 +163,8 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source,
     compute::copy(h_adjacencyMap.begin(), h_adjacencyMap.end(), d_adjacencyMap.begin(), queue);
     compute::copy(h_openLists.begin(), h_openLists.end(), d_openLists.begin(), queue); // source
     compute::copy(h_openSizes.begin(), h_openSizes.end(), d_openSizes.begin(), queue);
-    compute::copy(h_closed.begin(), h_closed.end(), d_closed.begin(), queue);
+    compute::copy(h_info.begin(), h_info.end(), d_info.begin(), queue);
+    compute::copy(h_slistSizes.begin(), h_slistSizes.end(), d_slistSizes.begin(), queue);
     const auto uploadStop = std::chrono::high_resolution_clock::now();
 
     // TODO: Figure these out!

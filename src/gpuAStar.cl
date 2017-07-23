@@ -140,7 +140,7 @@ size_t recreate_path(__global const int2  *nodes,
                      __global       Info  *info,
                                     uint   destination)
 {
-    // TODO: optimize! Use local memory!
+    // TODO: optimize! (Re-)Use local memory!
 
     path[0] = nodes[destination];
     size_t length = 1;
@@ -154,12 +154,7 @@ size_t recreate_path(__global const int2  *nodes,
         path[length++] = nodes[node];
     }
 
-    // reverse path
-    for (int i = 0; i < length / 2; ++i) {
-        int2 tmp = path[i];
-        path[i] = path[length - i - 1];
-        path[length - i - 1] = tmp;
-    }
+    // Note: path is in inverse order!
 
     return length;
 }
