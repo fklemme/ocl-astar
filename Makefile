@@ -2,9 +2,9 @@ BOOSTDIR := $(shell test -d boost && echo local)
 
 CXXFLAGS += -std=c++14 \
             -O3 \
-            -Wall -Wextra \
-            -Wno-unknown-pragmas \
             -Wno-ignored-attributes
+            #-Wall -Wextra
+            #-Wno-unknown-pragmas
 LDFLAGS  += -lOpenCL
 
 ifeq ($(BOOSTDIR), local)
@@ -46,9 +46,3 @@ boost:
 .PHONY: format
 format:
 	clang-format -i -style=file $(HEADERS) $(SOURCES)
-
-# Clang Tidy
-.PHONY: tidy
-tidy:
-	clang-tidy -checks=cppcoreguidelines-*,modernize-*,readability-*,-readability-braces-around-statements,-cppcoreguidelines-pro-bounds-array-to-pointer-decay \
-	    -header-filter=src/ $(SOURCES) -- $(CXXFLAGS)
