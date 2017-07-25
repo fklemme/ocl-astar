@@ -233,10 +233,14 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
     // TODO: Figure these out!
     assert(maxWorkItemDimensions >= 2);
     const std::array<std::size_t, 2> globalWorkSize = {numberOfQueues, maxSuccessorsPerNode};
-    const std::array<std::size_t, 2> localWorkSize = {
-        std::min(numberOfQueues / maxSuccessorsPerNode,
-                 std::min(maxWorkItemSizes[0], maxWorkGroupSize / maxSuccessorsPerNode)),
+    const std::array<std::size_t, 2> localWorkSize = { // FIXME: Hardcoded for Notebook!
+        32, //std::min(numberOfQueues / maxSuccessorsPerNode, std::min(maxWorkItemSizes[0], maxWorkGroupSize / maxSuccessorsPerNode)),
         std::min(maxSuccessorsPerNode, maxWorkItemSizes[1])};
+
+#ifdef DEBUG_OUTPUT
+	std::cout << "Global work sizes: " << globalWorkSize[0] << ", " << globalWorkSize[1]
+		<< "\nLocal work sizes: " << localWorkSize[0] << ", " << localWorkSize[1] << std::endl;
+#endif
 
     // Run kernels
     const auto     kernelsStart = std::chrono::high_resolution_clock::now();
