@@ -108,15 +108,13 @@ gpuAStar(const Graph &graph, const std::vector<std::pair<Position, Position>> &s
     compute::vector<compute::int2_> d_retCodeLength(numberOfAgents, context);
 
     // Local memory: Some magic to find a good value for local memory size per agent.
-    const auto maxLocalBytes = (std::size_t)(clDevice.local_memory_size() *
-                                             0.95); // fails sometimes if you try to allocate 100%
-    const auto perAgentTargetBytes = (std::size_t)(h_nodes.size() * sizeof(uint_float) *
-                                                   0.1); // really hard to pick a good factor here
+    const auto maxLocalBytes = (std::size_t)(clDevice.local_memory_size() * 0.99); // fails sometimes if you try to allocate 100%
+    const auto perAgentTargetBytes = std::max(7 * sizeof(uint_float), (std::size_t)(h_nodes.size() * sizeof(uint_float) * 0.001)); // really hard to pick a good factor here
     const auto perAgentLocalBytes = std::min(perAgentTargetBytes, maxLocalBytes);
 
     const auto localWorkSize =
         std::min((std::size_t)(1 << (int) std::log2(maxLocalBytes / perAgentLocalBytes)),
-                 clDevice.get_info<CL_DEVICE_MAX_WORK_GROUP_SIZE>());
+                 clDevice.get_info<CL_DEVICE_MAX_WORK_GROUP_SIZE>() / 2); // FIXME: /2 for notebook.
     const auto globalWorkSize =
         (std::size_t) std::ceil((double) numberOfAgents / localWorkSize) * localWorkSize;
 

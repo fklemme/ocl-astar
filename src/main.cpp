@@ -31,7 +31,7 @@ static void runAStar(const compute::device &clDevice) {
     graph.generateObstacles();
 
     // Generate source/destination pairs
-    const int                          pathCount = 1000; // should be big
+    const int                          pathCount = 2500; // should be big
     std::random_device                 rd;
     std::default_random_engine         generator(rd());
     std::uniform_int_distribution<int> distX(0, graph.width() - 1);
@@ -139,22 +139,25 @@ static void runGAStar(const compute::device &clDevice) {
 }
 
 int main() {
+#if 1
     // Select default OpenCL device
-    compute::device gpu = compute::system::default_device();
-
+    compute::device dev = compute::system::default_device();
+#else
     // Workaround for testing on broken AMD system: Use CPU instead.
-    auto cpu = []() {
+	compute::device dev = []() {
         for (auto d : compute::system::devices())
             if (d.type() == compute::device::cpu)
                 return d;
         return compute::system::default_device();
     }();
+#endif
+	std::cout << "OpenCL device: " << dev.name() << std::endl;
 
     // Run multi-agent A*
-    runAStar(gpu);
+    runAStar(dev);
 
     // Run parallel GA*
-    runGAStar(gpu);
+    runGAStar(dev);
 
 #ifdef _WIN32
     std::cout << "\nPress ENTER to continue..." << std::flush;

@@ -14,9 +14,12 @@ Graph::Graph(int width, int height) : m_width(width), m_height(height) {
 }
 
 void Graph::generateObstacles(int amount) {
-    std::random_device         rd;
+#if 1
+    std::random_device rd;
+#else
+	auto rd = []() { return 0; }; // Fix seed for debugging.
+#endif
     std::default_random_engine generator(rd());
-
     std::normal_distribution<> distX(m_width / 2.0, m_width / 4.0);
     std::normal_distribution<> distY(m_height / 2.0, m_height / 4.0);
 

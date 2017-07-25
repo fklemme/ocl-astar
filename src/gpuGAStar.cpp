@@ -31,9 +31,7 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
     if (source == destination)
         return {{graph, destination}};
 
-    const std::size_t numberOfQueues =
-        clDevice.compute_units() *
-        clDevice.max_work_group_size(); // TODO: How to pick these numbers?
+	const std::size_t numberOfQueues = clDevice.compute_units() * clDevice.max_work_group_size() / 2; // TODO: How to pick these numbers?
     const std::size_t sizeOfAQueue =
         (std::size_t)(16 << (int) std::ceil(std::log2((double) graph.size() / numberOfQueues)));
     assert(sizeOfAQueue <= std::numeric_limits<compute::uint_>::max());
@@ -234,8 +232,8 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
     // TODO: Figure these out!
     assert(maxWorkItemDimensions >= 2);
     const std::array<std::size_t, 2> globalWorkSize = {numberOfQueues, maxSuccessorsPerNode};
-    const std::array<std::size_t, 2> localWorkSize = { // FIXME: Hardcoded for Notebook!
-        32, //std::min(numberOfQueues / maxSuccessorsPerNode, std::min(maxWorkItemSizes[0], maxWorkGroupSize / maxSuccessorsPerNode)),
+    const std::array<std::size_t, 2> localWorkSize = { // FIXME: Again, made it work for notebook!
+        std::min(numberOfQueues / maxSuccessorsPerNode, std::min(maxWorkItemSizes[0], maxWorkGroupSize / maxSuccessorsPerNode) / 2),
         std::min(maxSuccessorsPerNode, maxWorkItemSizes[1])};
 
 #ifdef DEBUG_OUTPUT
@@ -278,6 +276,7 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
                           << ")";
             std::cout << "\n";
         }
+		std::cout << std::endl;
 #endif
 
         queue.enqueue_1d_range_kernel(clearTList, 0, globalWorkSize[0], localWorkSize[0]);
@@ -304,6 +303,7 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
                           << ")";
             std::cout << "\n";
         }
+		std::cout << std::endl;
 #endif
 
         start = std::chrono::high_resolution_clock::now();
@@ -331,7 +331,7 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
         for (std::size_t i = 0; i < h_compSize; ++i)
             std::cout << " (" << h_comp[i].node << ", " << h_comp[i].totalCost << ", "
                       << h_comp[i].predecessor << ")";
-        std::cout << "\n";
+		std::cout << "\n" << std::endl;
 #endif
 
         start = std::chrono::high_resolution_clock::now();
@@ -354,6 +354,10 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
                 std::cout << " (" << it->first << ", " << it->second << ")";
             std::cout << "\n";
         }
+
+		// Wait for key-press to continue...
+		std::cout << std::flush;
+		std::cin.ignore();
 #else
         std::vector<compute::uint_> h_openSizes(d_openSizes.size());
         compute::copy(d_openSizes.begin(), d_openSizes.end(), h_openSizes.begin(), queue);
