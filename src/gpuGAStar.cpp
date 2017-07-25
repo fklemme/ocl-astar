@@ -6,6 +6,7 @@
 #include <cassert>
 #include <chrono>
 #include <iostream>
+#include <map>
 #include <stdexcept>
 #include <string>
 
@@ -238,15 +239,23 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
                  std::min(maxWorkItemSizes[0], maxWorkGroupSize / maxSuccessorsPerNode)),
         std::min(maxSuccessorsPerNode, maxWorkItemSizes[1])};
 
+    std::map<std::string, std::chrono::duration<double>> kernelTimings;
+
     // Run kernels
-    const auto     kernelsStart = std::chrono::high_resolution_clock::now();
     compute::uint_ h_queueRotation = 0;
     compute::uint_ h_returnCode = 1; // still running
     while (h_returnCode == 1) {
+        int timeIndex = 0;
+
         h_returnCode = 2; // no path found, as initial value
         compute::copy(&h_returnCode, std::next(&h_returnCode), d_returnCode.begin(), queue);
         queue.enqueue_1d_range_kernel(clearSList, 0, globalWorkSize[0], localWorkSize[0]);
+
+        auto start = std::chrono::high_resolution_clock::now();
         queue.enqueue_1d_range_kernel(extractAndExpand, 0, globalWorkSize[0], localWorkSize[0]);
+        queue.finish();
+        kernelTimings["ExtractAndExpand"] += std::chrono::high_resolution_clock::now() - start;
+
         compute::copy(d_returnCode.begin(), d_returnCode.end(), &h_returnCode, queue);
 
 #ifdef DEBUG_LISTS
@@ -268,8 +277,12 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
 #endif
 
         queue.enqueue_1d_range_kernel(clearTList, 0, globalWorkSize[0], localWorkSize[0]);
+
+        start = std::chrono::high_resolution_clock::now();
         queue.enqueue_nd_range_kernel(duplicateDetection, 2, 0, globalWorkSize.data(),
                                       localWorkSize.data());
+        queue.finish();
+        kernelTimings["DuplicateDetection"] += std::chrono::high_resolution_clock::now() - start;
 
 #ifdef DEBUG_LISTS
         std::vector<Info>           h_tlistChunks(d_slistChunks.size());
@@ -289,10 +302,18 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
         }
 #endif
 
+        start = std::chrono::high_resolution_clock::now();
         compute::exclusive_scan(d_tlistSizes.begin(), d_tlistSizes.end(), d_exclusiveSums.begin(),
                                 queue);
+        queue.finish();
+        kernelTimings["compute::exclusive_scan"] +=
+            std::chrono::high_resolution_clock::now() - start;
+
+        start = std::chrono::high_resolution_clock::now();
         queue.enqueue_nd_range_kernel(compactTList, 2, 0, globalWorkSize.data(),
                                       localWorkSize.data());
+        queue.finish();
+        kernelTimings["CompactTList"] += std::chrono::high_resolution_clock::now() - start;
 
 #ifdef DEBUG_LISTS
         std::vector<Info> h_comp(d_tlistCompacted.size());
@@ -309,7 +330,10 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
         std::cout << "\n";
 #endif
 
+        start = std::chrono::high_resolution_clock::now();
         queue.enqueue_1d_range_kernel(computeAndPushBack, 0, globalWorkSize[0], localWorkSize[0]);
+        queue.finish();
+        kernelTimings["ComputeAndPushBack"] += std::chrono::high_resolution_clock::now() - start;
 
 #ifdef DEBUG_LISTS
         std::vector<uint_float>     h_openLists(d_openLists.size());
@@ -352,7 +376,6 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
                       queue);
         queue.finish(); // make sure we have the returnCode downloaded
     }
-    const auto kernelsStop = std::chrono::high_resolution_clock::now();
 
     // Download data
     const auto downloadStart = std::chrono::high_resolution_clock::now();
@@ -385,9 +408,10 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
     std::cout << "GPU time for graph (" << graph.width() << ", " << graph.height() << "):"
               << "\n - Upload time: "
               << std::chrono::duration<double>(uploadStop - uploadStart).count() << " seconds"
-              << "\n - Kernels runtime: "
-              << std::chrono::duration<double>(kernelsStop - kernelsStart).count() << " seconds"
-              << "\n - Download time: "
+              << "\n - Kernel runtimes: ";
+    for (const auto &time : kernelTimings)
+        std::cout << "\n   - " << time.first << ": " << time.second.count() << " seconds";
+    std::cout << "\n - Download time: "
               << std::chrono::duration<double>(downloadStop - downloadStart).count() << " seconds"
               << std::endl;
 
