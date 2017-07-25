@@ -183,8 +183,8 @@ __kernel void duplicateDetection(         const ulong       numberOfQueues,   //
 }
 
 __kernel void compactTList(         const ulong       numberOfQueues,   // provides offset ...
-                           __global       Info       *tlistChunks,      // "T" list, divided into chunks
-                           __global       uint       *tlistSizes,
+                           __global const Info       *tlistChunks,      // "T" list, divided into chunks
+                           __global const uint       *tlistSizes,
                                     const ulong       tlistChunkSize,
                            __global       uint       *exclusiveSums,
                            __global       Info       *tlistCompacted,
@@ -196,7 +196,7 @@ __kernel void compactTList(         const ulong       numberOfQueues,   // provi
     if (GID.x >= numberOfQueues || GID.y >= tlistChunkSize)
         return;
 
-    __global Info *tlist = tlistChunks + GID.x * tlistChunkSize;
+    __global const Info *tlist = tlistChunks + GID.x * tlistChunkSize;
     const uint tlistSize = tlistSizes[GID.x];
     const uint index = exclusiveSums[GID.x];
 
@@ -225,8 +225,9 @@ __kernel void computeAndPushBack(__global const int2       *nodes,            //
                                  __global       uint_float *openLists,        // aka "Q" priority queues
                                  __global       uint       *openSizes,
                                  __global       Info       *info,             // closed list, see members at the top
-                                 __global       Info       *tlistCompacted,   // "T" list, compacted!
-                                 __global       uint       *tlistCompactedSize)
+                                 __global const Info       *tlistCompacted,   // "T" list, compacted!
+                                 __global const uint       *tlistCompactedSize,
+                                 __global const uint       *queueRotation)
 {
     // Parallel for each queue (one dimensional)
     const size_t GID = get_global_id(0);
@@ -236,8 +237,9 @@ __kernel void computeAndPushBack(__global const int2       *nodes,            //
 
     const int2 destNode = nodes[destination];
 
-    __global uint_float *openList = openLists + GID * sizeOfAQueue;
-    size_t openSize = openSizes[GID]; // read open list size
+    const size_t openIndex = (GID + *queueRotation) % numberOfQueues;
+    __global uint_float *openList = openLists + openIndex * sizeOfAQueue;
+    size_t openSize = openSizes[openIndex]; // read open list size
 
     const size_t tlistSize = *tlistCompactedSize;
     for (size_t i = GID; i < tlistSize; i += numberOfQueues) {
@@ -284,5 +286,5 @@ __kernel void computeAndPushBack(__global const int2       *nodes,            //
     }
 
     // Write back new list size
-    openSizes[GID] = (uint) openSize;
+    openSizes[openIndex] = (uint) openSize;
 }

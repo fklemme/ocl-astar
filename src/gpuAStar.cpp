@@ -1,5 +1,3 @@
-#define BOOST_COMPUTE_DEBUG_KERNEL_COMPILATION
-
 #include "astar.h"
 
 #include <algorithm>

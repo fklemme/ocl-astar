@@ -1,8 +1,7 @@
-#define BOOST_COMPUTE_DEBUG_KERNEL_COMPILATION
-
 #include "astar.h"
 
 #include <algorithm>
+#include <array>
 #include <boost/compute.hpp>
 #include <cassert>
 #include <chrono>
@@ -32,6 +31,7 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
         return {{graph, destination}};
 
     const std::size_t numberOfQueues =
+        clDevice.compute_units() *
         clDevice.max_work_group_size(); // TODO: How to pick these numbers?
     const std::size_t sizeOfAQueue =
         (std::size_t)(16 << (int) std::ceil(std::log2((double) graph.size() / numberOfQueues)));
@@ -47,12 +47,12 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
     const std::size_t maxSuccessorsPerNode = 4;
 #endif
 
-#ifdef DEBUG_OUTPUT
     const auto maxMemAllocSize = clDevice.get_info<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
     const auto maxWorkGroupSize = clDevice.get_info<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
     const auto maxWorkItemDimensions = clDevice.get_info<CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS>();
     const auto maxWorkItemSizes = clDevice.get_info<CL_DEVICE_MAX_WORK_ITEM_SIZES>();
 
+#ifdef DEBUG_OUTPUT
     std::cout << "OpenCL device: " << clDevice.name()
               << "\n - Compute units: " << clDevice.compute_units()
               << "\n - Global memory: " << bytes(clDevice.global_memory_size())
@@ -128,6 +128,7 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
     compute::vector<compute::uint_> d_exclusiveSums(d_tlistSizes.size(), context);
     compute::vector<Info>           d_tlistCompacted(d_tlistChunks.size(), context);
     compute::vector<compute::uint_> d_tlistCompactedSize(1, context);
+    compute::vector<compute::uint_> d_queueRotation(1, context);
 
     compute::vector<compute::uint_> d_returnCode(1, context);
 
@@ -207,6 +208,7 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
     computeAndPushBack.set_arg(7, d_info);
     computeAndPushBack.set_arg(8, d_tlistCompacted);
     computeAndPushBack.set_arg(9, d_tlistCompactedSize);
+    computeAndPushBack.set_arg(10, d_queueRotation);
 
     // Data initialization
     std::vector<uint_float>     h_openLists(1, std::make_pair(index(source.x, source.y), 0.0f));
@@ -229,12 +231,16 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
     const auto uploadStop = std::chrono::high_resolution_clock::now();
 
     // TODO: Figure these out!
-    const std::size_t globalWorkSize[2] = {numberOfQueues, maxSuccessorsPerNode};
-    const std::size_t localWorkSize[2] = {numberOfQueues / maxSuccessorsPerNode,
-                                          maxSuccessorsPerNode};
+    assert(maxWorkItemDimensions >= 2);
+    const std::array<std::size_t, 2> globalWorkSize = {numberOfQueues, maxSuccessorsPerNode};
+    const std::array<std::size_t, 2> localWorkSize = {
+        std::min(numberOfQueues / maxSuccessorsPerNode,
+                 std::min(maxWorkItemSizes[0], maxWorkGroupSize / maxSuccessorsPerNode)),
+        std::min(maxSuccessorsPerNode, maxWorkItemSizes[1])};
 
     // Run kernels
     const auto     kernelsStart = std::chrono::high_resolution_clock::now();
+    compute::uint_ h_queueRotation = 0;
     compute::uint_ h_returnCode = 1; // still running
     while (h_returnCode == 1) {
         h_returnCode = 2; // no path found, as initial value
@@ -262,7 +268,8 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
 #endif
 
         queue.enqueue_1d_range_kernel(clearTList, 0, globalWorkSize[0], localWorkSize[0]);
-        queue.enqueue_nd_range_kernel(duplicateDetection, 2, 0, globalWorkSize, localWorkSize);
+        queue.enqueue_nd_range_kernel(duplicateDetection, 2, 0, globalWorkSize.data(),
+                                      localWorkSize.data());
 
 #ifdef DEBUG_LISTS
         std::vector<Info>           h_tlistChunks(d_slistChunks.size());
@@ -284,7 +291,8 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
 
         compute::exclusive_scan(d_tlistSizes.begin(), d_tlistSizes.end(), d_exclusiveSums.begin(),
                                 queue);
-        queue.enqueue_nd_range_kernel(compactTList, 2, 0, globalWorkSize, localWorkSize);
+        queue.enqueue_nd_range_kernel(compactTList, 2, 0, globalWorkSize.data(),
+                                      localWorkSize.data());
 
 #ifdef DEBUG_LISTS
         std::vector<Info> h_comp(d_tlistCompacted.size());
@@ -328,6 +336,20 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
                         [&](compute::uint_ size) { return size >= sizeOfAQueue; }))
             throw std::overflow_error("Open list overflow!");
 
+#ifdef DEBUG_OUTPUT
+        const auto it = std::partition(h_openSizes.begin(), h_openSizes.end(),
+                                       [&](std::size_t size) { return size >= sizeOfAQueue / 2; });
+        const auto numHalfFullQueues = std::distance(h_openSizes.begin(), it);
+        if (numHalfFullQueues > 0) {
+            std::cout << "Half-full queues: " << numHalfFullQueues << " / " << numberOfQueues;
+            const auto worst = *std::max_element(h_openSizes.begin(), it);
+            std::cout << ", worst: " << (100.0 * worst / sizeOfAQueue) << "% full\n";
+        }
+#endif
+
+        h_queueRotation = (h_queueRotation + 1) % numberOfQueues;
+        compute::copy(&h_queueRotation, std::next(&h_queueRotation), d_queueRotation.begin(),
+                      queue);
         queue.finish(); // make sure we have the returnCode downloaded
     }
     const auto kernelsStop = std::chrono::high_resolution_clock::now();
