@@ -2,13 +2,13 @@
 
 // Workaround for my old crappy notebook: Force OpenCL 1.1!
 // For some reason, OpenCL 1.2 is declared in the header, although not supported on the platform.
-#if 1
+#if 0
 #include <boost/compute/cl.hpp>
 #undef CL_VERSION_1_2
 #pragma warning(disable : 4996) // deprecation warnings
 #endif
 
-//#define BOOST_COMPUTE_DEBUG_KERNEL_COMPILATION
+#define BOOST_COMPUTE_DEBUG_KERNEL_COMPILATION
 
 #include "Graph.h"
 #include "Node.h"

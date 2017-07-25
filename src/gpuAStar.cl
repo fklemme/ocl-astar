@@ -227,26 +227,32 @@ __kernel void gpuAStar(__global const int2       *nodes,            // x, y
         info[current].closed = 1; // close node
         const float totalCost = info[current].totalCost;
 
+        const int2 destNode = nodes[destination];
+
         const uint2 edgeRange = adjacencyMap[current];
         for (uint edge = edgeRange.x; edge != edgeRange.y; ++edge) {
             const uint  nbNode     = edges[edge].first;
             const float nbStepCost = edges[edge].second;
+            Info        nbInfo     = info[nbNode];
 
-            if (info[nbNode].closed == 1)
+            if (nbInfo.closed == 1)
                 continue;
 
             const float nbTotalCost = totalCost + nbStepCost;
             const uint  nbIndex = find(&open, nbNode);
 
-            if (nbIndex < open.size && info[nbNode].totalCost <= nbTotalCost)
+            if (nbIndex < open.size && nbInfo.totalCost <= nbTotalCost)
                 continue;
 
-            info[nbNode].totalCost = nbTotalCost;
+            nbInfo.totalCost = nbTotalCost;
 
             // Store predecessor to recreate path
-            info[nbNode].predecessor = current;
+            nbInfo.predecessor = current;
 
-            const float nbHeuristic = heuristic(nodes[nbNode], nodes[destination]);
+            // Write back nbInfo
+            info[nbNode] = nbInfo;
+
+            const float nbHeuristic = heuristic(nodes[nbNode], destNode);
 
             if (nbIndex < open.size)
                 update(&open, nbIndex, nbNode, nbTotalCost + nbHeuristic);
