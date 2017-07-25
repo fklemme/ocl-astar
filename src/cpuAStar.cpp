@@ -26,6 +26,9 @@ struct Compare {
 // Implementation like in https://de.wikipedia.org/wiki/A*-Algorithmus#Funktionsweise
 std::vector<Node> cpuAStar(const Graph &graph, const Position &source,
                            const Position &destination) {
+	if (source == destination)
+		return { {{graph, source}, {graph, destination}} };
+
     // Open and closed list
     PriorityQueue<NodeCost, Compare> open;
     // (Tree) map seems to perform _much_ better than the unordered hash map!
