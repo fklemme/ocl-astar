@@ -27,7 +27,7 @@ struct Compare {
 std::vector<Node> cpuAStar(const Graph &graph, const Position &source,
                            const Position &destination) {
 	if (source == destination)
-		return { {{graph, source}, {graph, destination}} };
+		return {{graph, destination}};
 
     // Open and closed list
     PriorityQueue<NodeCost, Compare> open;
