@@ -31,7 +31,11 @@ std::vector<Node> gpuGAStar(const Graph &graph, const Position &source, const Po
     if (source == destination)
         return {{graph, destination}};
 
+#ifndef DEBUG_LISTS
 	const std::size_t numberOfQueues = clDevice.compute_units() * clDevice.max_work_group_size() / 2; // TODO: How to pick these numbers?
+#else
+	const std::size_t numberOfQueues = 8;
+#endif
     const std::size_t sizeOfAQueue =
         (std::size_t)(16 << (int) std::ceil(std::log2((double) graph.size() / numberOfQueues)));
     assert(sizeOfAQueue <= std::numeric_limits<compute::uint_>::max());
