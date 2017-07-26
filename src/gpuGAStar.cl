@@ -1,5 +1,9 @@
 // GPU GA* program
 
+#if 0
+#pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable
+#endif
+
 #define SQRT2 1.41421356237f
 
 // ----- Types ----------------------------------------------------------------
@@ -265,10 +269,11 @@ __kernel void computeAndPushBack(__global const int2       *nodes,            //
         // assert: current.totalCost > 0.0f
         while (*oldCost != 0.0f && *oldCost < current.totalCost) {
             // The old entry was better. Swap back!
+            *currentCostPred = oldCostPred;
             oldCostPred = atom_xchg(infoCostPred, *currentCostPred);
         }
 #else
-        // FIXME: There is still a bug here, probably a data race on duplicate nodes!
+        // FIXME: There is still a bug here, a data race on duplicate nodes!
         Info nodeInfo = info[current.node];
         if (nodeInfo.totalCost == 0.0f || current.totalCost < nodeInfo.totalCost) {
             nodeInfo.totalCost = current.totalCost;
