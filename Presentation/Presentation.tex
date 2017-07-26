@@ -11,7 +11,7 @@
 \lstset{ %
     language=C,
     basicstyle=\footnotesize,
-    morekeywords={__global,__local,uint}
+    morekeywords={__kernel,__global,__local,uint}
 }
 
 \usepackage[numbers]{natbib}
@@ -23,6 +23,13 @@
 \author{Florian Klemme}
 \frame{\titlepage}
 
+\begin{frame}
+    \frametitle{Overview}
+    \tableofcontents
+\end{frame}
+
+\section{The A* search algorithm}
+\subsection{The basics}
 \begin{frame}
     \frametitle{The A* search algorithm}
     \begin{columns}
@@ -43,6 +50,7 @@
     \end{columns}
 \end{frame}
 
+\subsection{GPGPU approaches}
 \begin{frame}
     \frametitle{Multi-agent A* vs. parallel GA*}
     Problem: It's hard to parallelize the priority queue!
@@ -54,7 +62,7 @@
         \begin{itemize}
             \item Per-agent local priority queue
             \item Node and edge information can be shared. Open and closed list has to be stored for each agent.
-            \item \textbf{Local memory is a scarce ressource!} I've seen 16, 32~and 48~kilobyte.
+            \item \textbf{Local memory is a scarce resource!} I've seen 16, 32~and 48~kilobyte.
         \end{itemize}
         
         \column{0.5\textwidth}
@@ -68,8 +76,10 @@
     \end{columns}
 \end{frame}
 
+\section{Priority queue as binary heap}
+\subsection{Dispatch memory access}
 \begin{frame}[fragile]
-    \frametitle{Priority queue: Dispatch memory accesses}
+    \frametitle{Priority queue: Dispatch memory access}
     \begin{lstlisting}
 typedef struct {
     __local  uint_float *localMem;
@@ -94,6 +104,7 @@ void _write_heap(OpenList *open, size_t     index,
     \end{lstlisting}
 \end{frame}
 
+\subsection{Binary heap functions}
 \begin{frame}[fragile]
     \frametitle{Priority queue as binary heap}
     \begin{columns}[T]
@@ -125,6 +136,7 @@ void update(OpenList *open, size_t index, uint  value,
     \end{lstlisting}
 \end{frame}
 
+\subsection{Push, pop and find}
 \begin{frame}[fragile]
     \frametitle{Binary heap: Push}
     \begin{lstlisting}
@@ -180,7 +192,7 @@ void pop(OpenList *open) {
 
 \begin{frame}[fragile]
     \frametitle{Binary heap: Find}
-    This could certainly be improved! Now it's basicly a simple breadth-first search.
+    This could certainly be improved! Now it's basically a simple breadth-first search.
     
     \begin{lstlisting}
 uint find(OpenList *open, uint value) {
@@ -197,6 +209,8 @@ uint find(OpenList *open, uint value) {
     Alternative: Except duplicate entries and ignore them later on. Would cost extra memory!
 \end{frame}
 
+\section{Multi-agent A*}
+\subsection{Kernel snippets}
 \begin{frame}[fragile]
     \frametitle{Multi-agent A* kernel}
     \begin{lstlisting}
@@ -223,6 +237,8 @@ while (open.size > 0) {
     \end{lstlisting}
 \end{frame}
 
+\section{Parallel GA*}
+\subsection{Data flow}
 \begin{frame}
     \frametitle{Data flow in parallel GA*}
     \begin{columns}
@@ -246,13 +262,135 @@ while (open.size > 0) {
     \end{columns}
 \end{frame}
 
+\subsection{Kernel selection}
 \begin{frame}
-    \frametitle{Lessons learned}
-    \begin{itemize}
-        \item Bla!
-    \end{itemize}
+    \frametitle{GA* Pseudocode}
+    \begin{columns}
+        \column{0.5\textwidth} % trim={<left> <lower> <right> <upper>}
+        \includegraphics[page=3, trim=50 164 316 238, clip, width=\textwidth]{zhou2015massively}
+        
+        \column{0.5\textwidth}
+        Run kernels, in order:
+        \begin{itemize}
+            \item clearSList
+            \item extractAndExpand
+            \item clearTList
+            \item duplicateDetection
+            \item exclusive\_scan
+            \item compactTList
+            \item computeAndPushBack
+        \end{itemize}
+        
+        \vspace{1em}
+        Pseudocode from~\cite{zhou2015massively}.
+    \end{columns}
 \end{frame}
 
+\subsection{Use of synchronization mechanisms}
+\begin{frame}[fragile]
+    \frametitle{Use of synchronization mechanisms: return code}
+    \begin{lstlisting}
+__kernel void extractAndExpand(/* ... */
+                         __global uint *returnCode) {
+    /* ... */
+    if (openSize == 0) {
+        atomic_min(returnCode, 2);
+        return; // failure: no path found!
+    }
+
+    /* ... */
+    if (current == destination) {
+        atomic_min(returnCode, 0);
+        return; // success: path found!
+    }
+
+    /* ... */
+    atomic_min(returnCode, 1); // still running...
+}
+    \end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]
+    \frametitle{Use of synchronization mechanisms: inserting elements}
+    \begin{lstlisting}
+__kernel void duplicateDetection(/* ... */) {
+    /* ... */
+    if (nodeInfo.closed == 1 &&
+        nodeInfo.totalCost < current.totalCost)
+        return; // better candidate already in open list
+
+    const uint hash = current.node % hashTableSize;
+    const uint old = atomic_xchg(hashTable + hash,
+                                 current.node);
+    if (old == current.node)
+        return; // node has already been added
+
+    __global Info *tlist =
+        tlistChunks + GID.x * slistChunkSize;
+    const uint index = atomic_inc(tlistSizes + GID.x);
+    tlist[index] = current;
+}
+    \end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]
+    \frametitle{Updating information: Transaction approach}
+    \begin{lstlisting}
+#pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable
+
+typedef struct {
+    uint  closed;    uint node;
+    float totalCost; uint predecessor;
+} Info;
+
+// Update totalCost and pred. as one 64 bit transaction.
+ulong *curCostPred = (ulong *) &current.totalCost;
+__global ulong *infoCostPred =
+    (__global ulong *) &info[current.node].totalCost;
+ulong oldCostPred = atom_xchg(infoCostPred, *curCostPred);
+float *oldCost = (float *) &oldCostPred;
+
+// assert: current.totalCost > 0.0f
+while (*oldCost != 0.0f && *oldCost < current.totalCost) {
+    // The old entry was better. Swap back!
+    *curCostPred = oldCostPred;
+    oldCostPred = atom_xchg(infoCostPred, *curCostPred);
+}
+    \end{lstlisting}
+\end{frame}
+
+\section{Conclusion}
+\subsection{Lessons learned}
+\begin{frame}
+    \frametitle{Lessons learned}
+    \begin{columns}
+        \column{0.5\textwidth}
+        \begin{itemize}
+            \item OpenCL is hard to make portable and reliable
+            \begin{itemize}
+                \item Compiler crashes
+                \item Wrong work sizes (even through API)
+            \end{itemize}
+            \item Performance depends on actual hardware
+            \item CPU A* is hard to beat, random obstacles have a huge impact
+        \end{itemize}
+        
+        \column{0.5\textwidth}
+        Multi-agent A*
+        \begin{itemize}
+            \item Work items \(>\) local memory
+            \item Make use of \emph{\_\_private} memory?
+        \end{itemize}
+        
+        Parallel GA*
+        \begin{itemize}
+            \item Needs lots of memory, highly dependent on random obstacles
+            \item Still lots of room for improvement!
+        \end{itemize}
+    \end{columns}
+\end{frame}
+
+\subsection{Demo performance}
 \begin{frame}[fragile]
     \frametitle{Demo configuration on my secondary computer}
     \scriptsize
@@ -283,9 +421,50 @@ GPU GA*: Gold test failed!
     \end{verbatim}
 \end{frame}
 
+\subsection{Boost Compute}
+\begin{frame}[fragile]
+    \frametitle{Boost Compute}
+Pure Template library, brings RAII, type-safety, common interface
+    \begin{lstlisting}[language=C++,basicstyle=\tiny]
+// get the default compute device
+compute::device gpu = compute::system::default_device();
+
+// create a compute context and command queue
+compute::context ctx(gpu);
+compute::command_queue queue(ctx, gpu);
+
+// generate random numbers on the host
+std::vector<float> host_vector(1000000);
+std::generate(host_vector.begin(), host_vector.end(), rand);
+
+// create vector on the device
+compute::vector<float> device_vector(1000000, ctx);
+
+// copy data to the device
+compute::copy(
+    host_vector.begin(), host_vector.end(), device_vector.begin(), queue
+);
+
+// sort data on the device
+compute::sort(
+    device_vector.begin(), device_vector.end(), queue
+);
+
+// copy data back to the host
+compute::copy(
+    device_vector.begin(), device_vector.end(), host_vector.begin(), queue
+);
+    \end{lstlisting}
+    \url{https://github.com/boostorg/compute}
+\end{frame}
+
+\section*{References}
 \begin{frame}
     \frametitle{References}
     \bibliography{Presentation} % \cite{zhou2015appendix}
+    
+    \vspace{1em}
+    In case you want to check it out: \url{https://github.com/Kruecke/ocl-astar}
 \end{frame}
 
 \end{document}
